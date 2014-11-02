@@ -14,11 +14,12 @@ varRegion::varRegion(const coord_type* low, const coord_type* high, uint32_t dim
 varRegion::varRegion(const varPoint& low, const varPoint& high) : SpatialIndex::Region() {
     init(low.coords, high.coords, low.dimension);
 }
-void varRegion::init(const coord_type* low, const coord_type* high, uint32_t dimension) {
+void varRegion::init(const coord_type* low_, const coord_type* high_, uint32_t dimension_) {
+    dimension = dimension_;
     low = new coord_type[dimension];
     high = new coord_type[dimension];
-    memcpy(this->low, low, dimension*sizeof(coord_type));
-    memcpy(this->high, high, dimension*sizeof(coord_type));
+    memcpy(this->low, low_, dimension*sizeof(coord_type));
+    memcpy(this->high, high_, dimension*sizeof(coord_type));
 }
 varRegion::~varRegion() {
     delete[] low;
