@@ -1,10 +1,6 @@
 #pragma once
+#include "common.h"
 #include "libspatialindex/include/spatialindex/SpatialIndex.h"
-#include <boost/variant.hpp>
-
-#define DISCRETE_TYPE long long
-#define REAL_TYPE double
-typedef boost::variant<DISCRETE_TYPE, REAL_TYPE> coord_type;
 
 class varPoint : public SpatialIndex::Point {
 public:

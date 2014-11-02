@@ -1,11 +1,6 @@
-#include <boost/variant.hpp>
+#include "common.h"
 #include "libspatialindex/include/spatialindex/SpatialIndex.h"
-#include "inline_variant.hpp"
 #include <iostream>
-#include <cstring>
-
-#define DISCRETE_TYPE long long
-#define REAL_TYPE double
 
 template <class T>
 class Point { 
@@ -47,7 +42,6 @@ class Point {
 
 typedef boost::variant<Point<DISCRETE_TYPE>, Point<REAL_TYPE>> point_type;
 typedef std::vector<point_type> points_vector;
-typedef boost::variant<DISCRETE_TYPE, REAL_TYPE> coord_type;
 
 class varPoint;
 class varRegion;
