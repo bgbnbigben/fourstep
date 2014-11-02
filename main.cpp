@@ -48,11 +48,6 @@ class varRegion;
 #include "varPoint.h"
 #include "varRegion.h"
 
-void test() {
-    assert(varRegion({-1, -1}, {1, 1}) == varRegion({-1, -1}, {1, 1}));
-    assert(varRegion({-1, -1}, {1, 1}) == varRegion({-1, -1}, {1, 0}));
-}
-
 SpatialIndex::ISpatialIndex* tree;
 SpatialIndex::id_type id;
 
@@ -64,10 +59,59 @@ DISCRETE_TYPE extractDiscrete(const point_type& x) {
     return match(x, [](const Point<REAL_TYPE>& p) { return (DISCRETE_TYPE)p(); }, [](const Point<DISCRETE_TYPE>& p) { return p(); });
 }
 
+class CheckerVisitor : public SpatialIndex::IVisitor {
+    bool found_;
+    double data_;
+public:
+    CheckerVisitor() : SpatialIndex::IVisitor(), found_(false), data_(0.0) {}
+    void visitNode(const SpatialIndex::INode& in) {}
+    void visitData(const SpatialIndex::IData& d) {
+        byte* data; uint32_t len; d.getData(len, &data);
+        found_ = true;
+        data_ = *(reinterpret_cast<REAL_TYPE*>(data));
+        delete[] data;
+    }
+    void visitData(std::vector<const SpatialIndex::IData*>& v) {}
+    bool found() const {
+        return found_;
+    }
+    double data() const {
+        return data_;
+    }
+};
+
 REAL_TYPE rosenbrock(const points_vector& x) {
-    tree->intersectsWithQuery(point_region, visitor);
-    if (visitor.found())
+    std::cout << "Have a point" << std::endl;
+    std::vector<double> low(x.size());
+    std::vector<double> high(x.size());
+    std::vector<double> casted(x.size());
+    for (auto i = 0u; i < x.size(); i++) {
+        low[i] = match(x[i], [&](Point<REAL_TYPE> p) {
+                return std::max(p.left, p() - 0.5);
+            }, [&] (Point<DISCRETE_TYPE> p) {
+                return std::min((double) p.left, (double)p() - 0.5);
+            });
+        high[i] = match(x[i], [&](Point<REAL_TYPE> p) {
+                return std::max(p.right, p() + 0.5);
+            }, [&] (Point<DISCRETE_TYPE> p) {
+                return std::min((double) p.right, (double)p() + 0.5);
+            });
+        casted[i] = match(x[i], [](Point<REAL_TYPE> p) {
+                return (double)(p());
+            }, [](Point<DISCRETE_TYPE> p) {
+                return (double)(p());
+            });
+        std::cout << casted[i] << ", " << low[i] << "->" << high[i] << std::endl;
+    }
+    SpatialIndex::Region point_region(&low[0], &high[0], x.size());
+    SpatialIndex::Point point(&casted[0], x.size());
+    CheckerVisitor visitor;
+    tree->pointLocationQuery(point, visitor);
+    if (visitor.found()) {
+        std::cout << "This point is basically " << visitor.data() << std::endl;
         return visitor.data();
+    }
+
 
     auto start = extractReal(x[0]);
     auto ret_val = (1.0 - start)*(1 - start);
@@ -82,6 +126,18 @@ REAL_TYPE rosenbrock(const points_vector& x) {
 
     tree->insertData(sizeof(REAL_TYPE), reinterpret_cast<const byte*>(&ret_val), point_region, id++);
     return ret_val;
+}
+
+void test() {
+    coord_type low[2]; low[0] = -1ll, low[1] = -1ll;
+    coord_type high[2]; high[0] = 1ll, high[1] = 0ll;
+    coord_type higher[2]; higher[0] = 1ll, higher[1] = 1ll;
+    assert(varRegion(varPoint(low, 2u), varPoint(higher, 2u)) == varRegion(varPoint(low, 2u), varPoint(higher, 2u)));
+    assert(!(varRegion(varPoint(low, 2u), varPoint(higher, 2u)) == varRegion(varPoint(low, 2u), varPoint(high, 2u))));
+    points_vector x = {Point<REAL_TYPE>(1.2, -1.0, 2.0), Point<REAL_TYPE>(1.0, -1.0, 2.0)};
+    std::cout << "This point = " << rosenbrock(x) << std::endl;
+    x = {Point<REAL_TYPE>(1.0, -1.0, 2.0), Point<REAL_TYPE>(1.0, -1.0, 2.0)};
+    std::cout << "new point = " << rosenbrock(x) << std::endl;
 }
 
 // f [in], x [in]
@@ -198,6 +254,13 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
 
 
 int main() {
+    std::string basename = "base.rtree";
+    SpatialIndex::IStorageManager* diskfile = SpatialIndex::StorageManager::createNewDiskStorageManager(basename, 4096);
+    SpatialIndex::StorageManager::IBuffer* file = SpatialIndex::StorageManager::createNewRandomEvictionsBuffer(*diskfile, 10, false);
+    SpatialIndex::id_type indexIdentifier;
+    tree = SpatialIndex::RTree::createNewRTree(*file, 0.7, 100, 100, /*points.size()*/2, SpatialIndex::RTree::RV_RSTAR, indexIdentifier);
+
+    /*
     points_vector points = {Point<double>(0.0, -1.0, 2.0), Point<long long>(0, -1, 2)};
     points_vector output;
     REAL_TYPE f;
@@ -207,18 +270,14 @@ int main() {
         std::cout << extractReal(p) << " ";
     std::cout << std::endl;
 
-    std::string basename = "base.rtree";
-    SpatialIndex::IStorageManager* diskfile = SpatialIndex::StorageManager::createNewDiskStorageManager(basename, 4096);
-    SpatialIndex::StorageManager::IBuffer* file = SpatialIndex::StorageManager::createNewRandomEvictionsBuffer(*diskfile, 10, false);
-    SpatialIndex::id_type indexIdentifier;
-    tree = SpatialIndex::RTree::createNewRTree(*file, 0.7, 100, 100, points.size(), SpatialIndex::RTree::RV_RSTAR, indexIdentifier);
-
-
     std::tie(output, f) = mesh_search(rosenbrock, points);
     std::cout << "Best f was " << f << std::endl;
     for (auto p : output)
         std::cout << extractReal(p) << " ";
     std::cout << std::endl;
+    */
+
+    test();
 
     return 0;
 }
