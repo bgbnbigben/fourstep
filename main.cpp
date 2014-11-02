@@ -4,46 +4,6 @@
 #include <random>
 #include "point.h"
 
-template <class T>
-class Point { 
-    public:
-        const T val;
-        const T left;
-        const T right;
-
-        Point() = delete;
-        Point(const T v, const T l, const T r) : val(v), left(l), right(r) {};
-        Point(const Point& p) : val(p.val), left(p.left), right(p.right) {};
-        Point(const Point&& p) : val(p.val), left(p.left), right(p.right) {};
-
-        Point<T>& operator=(const Point<T>& p) {
-            // Urgh.
-            auto t = const_cast<T*>(&this->val);
-            *t = p.val;
-            t = const_cast<T*>(&this->left);
-            *t = p.left;
-            t = const_cast<T*>(&this->right);
-            *t = p.right;
-
-            return *this;
-        }
-
-        Point<T>& operator=(const Point<T>&& p) {
-            auto t = const_cast<T*>(&this->val);
-            *t = p.val;
-            t = const_cast<T*>(&this->left);
-            *t = p.left;
-            t = const_cast<T*>(&this->right);
-            *t = p.right;
-
-            return *this;
-        }
-
-        T operator()() const { return val; }
-};
-
-typedef boost::variant<Point<DISCRETE_TYPE>, Point<REAL_TYPE>> point_type;
-typedef std::vector<point_type> points_vector;
 
 class varPoint;
 class varRegion;
@@ -53,14 +13,6 @@ class varRegion;
 
 SpatialIndex::ISpatialIndex* tree;
 SpatialIndex::id_type id;
-
-REAL_TYPE extractReal(const point_type& x) {
-    return match(x, [](const Point<REAL_TYPE>& p) { return p(); }, [](const Point<DISCRETE_TYPE>& p) { return (REAL_TYPE)p(); });
-}
-
-DISCRETE_TYPE extractDiscrete(const point_type& x) {
-    return match(x, [](const Point<REAL_TYPE>& p) { return (DISCRETE_TYPE)p(); }, [](const Point<DISCRETE_TYPE>& p) { return p(); });
-}
 
 class CheckerVisitor : public SpatialIndex::IVisitor {
     bool found_;
