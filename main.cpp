@@ -1,6 +1,8 @@
 #include "common.h"
 #include "libspatialindex/include/spatialindex/SpatialIndex.h"
 #include <iostream>
+#include <random>
+#include "point.h"
 
 template <class T>
 class Point { 
@@ -47,6 +49,7 @@ class varPoint;
 class varRegion;
 #include "varPoint.h"
 #include "varRegion.h"
+#include "particle.h"
 
 SpatialIndex::ISpatialIndex* tree;
 SpatialIndex::id_type id;
@@ -64,14 +67,14 @@ class CheckerVisitor : public SpatialIndex::IVisitor {
     double data_;
 public:
     CheckerVisitor() : SpatialIndex::IVisitor(), found_(false), data_(0.0) {}
-    void visitNode(const SpatialIndex::INode& in) {}
+    void visitNode(const SpatialIndex::INode&) {}
     void visitData(const SpatialIndex::IData& d) {
         byte* data; uint32_t len; d.getData(len, &data);
         found_ = true;
         data_ = *(reinterpret_cast<REAL_TYPE*>(data));
         delete[] data;
     }
-    void visitData(std::vector<const SpatialIndex::IData*>& v) {}
+    void visitData(std::vector<const SpatialIndex::IData*>&) {}
     bool found() const {
         return found_;
     }
@@ -80,38 +83,36 @@ public:
     }
 };
 
+unsigned long long function_calls;
+unsigned long long total_function_calls;
+
+double cube_width = 0.05;
+
 REAL_TYPE rosenbrock(const points_vector& x) {
-    std::cout << "Have a point" << std::endl;
+    ++total_function_calls;
     std::vector<double> low(x.size());
     std::vector<double> high(x.size());
     std::vector<double> casted(x.size());
     for (auto i = 0u; i < x.size(); i++) {
         low[i] = match(x[i], [&](Point<REAL_TYPE> p) {
-                return std::max(p.left, p() - 0.5);
+                return std::max(p.left, p() - cube_width);
             }, [&] (Point<DISCRETE_TYPE> p) {
-                return std::min((double) p.left, (double)p() - 0.5);
+                return std::max((double) p.left, (double)p() - cube_width);
             });
         high[i] = match(x[i], [&](Point<REAL_TYPE> p) {
-                return std::max(p.right, p() + 0.5);
+                return std::min(p.right, p() + cube_width);
             }, [&] (Point<DISCRETE_TYPE> p) {
-                return std::min((double) p.right, (double)p() + 0.5);
+                return std::min((double) p.right, (double)p() + cube_width);
             });
-        casted[i] = match(x[i], [](Point<REAL_TYPE> p) {
-                return (double)(p());
-            }, [](Point<DISCRETE_TYPE> p) {
-                return (double)(p());
-            });
-        std::cout << casted[i] << ", " << low[i] << "->" << high[i] << std::endl;
+        casted[i] = extractReal(x[i]);
     }
     SpatialIndex::Region point_region(&low[0], &high[0], x.size());
     SpatialIndex::Point point(&casted[0], x.size());
     CheckerVisitor visitor;
     tree->pointLocationQuery(point, visitor);
     if (visitor.found()) {
-        std::cout << "This point is basically " << visitor.data() << std::endl;
         return visitor.data();
     }
-
 
     auto start = extractReal(x[0]);
     auto ret_val = (1.0 - start)*(1 - start);
@@ -125,6 +126,7 @@ REAL_TYPE rosenbrock(const points_vector& x) {
     std::cerr << extractReal(x[0]) << ")" << std::endl;
 
     tree->insertData(sizeof(REAL_TYPE), reinterpret_cast<const byte*>(&ret_val), point_region, id++);
+    ++function_calls;
     return ret_val;
 }
 
@@ -140,16 +142,15 @@ void test() {
     std::cout << "new point = " << rosenbrock(x) << std::endl;
 }
 
-// f [in], x [in]
-std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const points_vector&)> f, const points_vector x) {
+std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const points_vector&)> f, const points_vector& x) {
     std::vector<bool> continuous(x.size());
     std::transform(x.begin(), x.end(), continuous.begin(),
             [](const point_type& p) { return p.type() == typeid(Point<double>); });
     for (auto i : continuous)
         std::cerr << (i ? "Continuous" : "Discrete") << std::endl;
-    std::vector<boost::variant<DISCRETE_TYPE, REAL_TYPE>> left(x.size());
+    std::vector<coord_type> left(x.size());
     // The mesh right window
-    std::vector<boost::variant<DISCRETE_TYPE, REAL_TYPE>> right(x.size());
+    std::vector<coord_type> right(x.size());
     for (auto i = 0u; i < x.size(); i++) {
         if (continuous[i]) {
             left[i] = boost::get<Point<REAL_TYPE>>(x[i]).left;
@@ -165,8 +166,9 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
 
     bool improvement = true;
     int constrictions = 0; // take 2^constrictions number of nodes per line.
-    while (improvement || constrictions < 10) {
-        std::cerr << "Had an improvement" << std::endl;
+    auto meshWidth = 1.0;
+    while (improvement || constrictions < 20) {
+        improvement ? (std::cerr << "Had an improvement" << std::endl) : (std::cerr << "Going around again" << std::endl);
         improvement = false;
         points_vector test(bestX);
 
@@ -178,21 +180,23 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
                 numPoints *= nodesPerRow;
             } else {
                 auto& p = boost::get<Point<DISCRETE_TYPE>>(bestX[i]);
-                auto v = std::min(nodesPerRow, p.right - p.left + 1);
+                auto v = std::min((double)nodesPerRow, std::min(meshWidth + 1, (double)(p.right - p.left + 1)));
                 numPoints *= v;
             }
         }
 
-        // there are std::min(npr, right - left + 1) nodes in a continuous row.
+        // there are min(npr, width, right - left + 1) nodes in a continuous row.
         // This has been rounded down to an odd number
 
         for (auto i = 0u; i < test.size(); i++) {
             if (continuous[i]) {
                 auto& p = boost::get<Point<REAL_TYPE>>(test[i]);
+                auto left = (meshWidth < (p.right - p.left)) ? p() - meshWidth / 2 : p.left;
+                auto right = (meshWidth < (p.right - p.left)) ? p() + meshWidth / 2 : p.right;
                 if (i == 0) {
-                    test[i] = std::move(Point<REAL_TYPE>(p.left - (p.right - p.left)/nodesPerRow, p.left, p.right));
+                    test[i] = std::move(Point<REAL_TYPE>(left - (right - left)/nodesPerRow, p.left, p.right));
                 } else {
-                    test[i] = std::move(Point<REAL_TYPE>(p.left, p.left, p.right));
+                    test[i] = std::move(Point<REAL_TYPE>(left, p.left, p.right));
                 }
             } else {
                 auto& p = boost::get<Point<DISCRETE_TYPE>>(test[i]);
@@ -252,7 +256,6 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
     return std::make_tuple(bestX, bestF);
 }
 
-
 int main() {
     std::string basename = "base.rtree";
     SpatialIndex::IStorageManager* diskfile = SpatialIndex::StorageManager::createNewDiskStorageManager(basename, 4096);
@@ -260,24 +263,28 @@ int main() {
     SpatialIndex::id_type indexIdentifier;
     tree = SpatialIndex::RTree::createNewRTree(*file, 0.7, 100, 100, /*points.size()*/2, SpatialIndex::RTree::RV_RSTAR, indexIdentifier);
 
-    /*
-    points_vector points = {Point<double>(0.0, -1.0, 2.0), Point<long long>(0, -1, 2)};
+    std::vector<points_vector> start_points = {{Point<double>(0.0, -1.0, 2.0), Point<long long>(0, -1, 2)},
+                                                {Point<double>(0.1, -1.0, 2.0), Point<long long>(-1, -1, 2)}};
     points_vector output;
     REAL_TYPE f;
-    std::tie(output, f) = mesh_search(rosenbrock, {Point<double>(0.0, -1.0, 2.0), Point<double>(0.0, -1.0, 2.0)});
+
+    std::tie(output, f) = particle_swarm(rosenbrock, start_points);
+    std::cout << "Seeding mesh_search with (";
+    for (auto p : output) {
+        std::cout << extractReal(p) << " ";
+    }
+    std::cout << "\b) for a value of " << f << std::endl;
+    //output = start_points[0];
+
+    std::tie(output, f) = mesh_search(rosenbrock, output);
     std::cout << "Best f was " << f << std::endl;
     for (auto p : output)
         std::cout << extractReal(p) << " ";
     std::cout << std::endl;
 
-    std::tie(output, f) = mesh_search(rosenbrock, points);
-    std::cout << "Best f was " << f << std::endl;
-    for (auto p : output)
-        std::cout << extractReal(p) << " ";
-    std::cout << std::endl;
-    */
+    std::cout << "A total of " << function_calls << " calls out of " << total_function_calls << std::endl;
 
-    test();
+    //test();
 
     return 0;
 }
