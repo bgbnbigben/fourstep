@@ -1,1 +1,6 @@
+main
 *.o
+*.a
+*.so*
+*.la
+*.rtree.*
