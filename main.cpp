@@ -4,6 +4,7 @@
 #include <random>
 #include "point.h"
 #include "mesh_search.h"
+//#include <mpi.h>
 
 
 //class varPoint;
@@ -95,12 +96,132 @@ void test() {
     std::cout << "new point = " << rosenbrock(x) << std::endl;
 }
 
-int main() {
-    std::string basename = "base.rtree";
-    SpatialIndex::IStorageManager* diskfile = SpatialIndex::StorageManager::createNewDiskStorageManager(basename, 4096);
-    SpatialIndex::StorageManager::IBuffer* file = SpatialIndex::StorageManager::createNewRandomEvictionsBuffer(*diskfile, 10, false);
-    SpatialIndex::id_type indexIdentifier;
-    tree = SpatialIndex::RTree::createNewRTree(*file, 0.7, 100, 100, /*points.size()*/2, SpatialIndex::RTree::RV_RSTAR, indexIdentifier);
+
+#define DIE_TAG 0xd1ed1e
+
+
+int main(int argc, char* argv[]) {
+    MPI::Init(argc, argv);
+
+    MPI::Status stat;
+    auto numprocs = MPI::COMM_WORLD.Get_size();
+    auto rank = MPI::COMM_WORLD.Get_rank();
+    MPI::COMM_WORLD.Set_errhandler(MPI::ERRORS_ARE_FATAL);
+    std::vector<points_vector> start_points = {{Point<double>(0.0, -1.0, 2.0), Point<long long>(0, -1, 2)},
+                                                {Point<double>(0.1, -1.0, 2.0), Point<long long>(-1, -1, 2)}};
+    auto numDimensions = start_points[0].size();
+    // Fuck it, bin process 0 as only a data marshall. Whatever.
+    if (rank == 0) {
+        auto globalBest = std::numeric_limits<double>::max();
+        points_vector globalData(numDimensions);
+        auto partitions = 100;
+        auto generatePartitions = [&](auto numPartitions) {
+            std::vector<points_vector> ret(partitions);
+            std::vector<int> splits(numDimensions, -1);
+            auto maxPartitions = std::lround(std::pow(numDimensions, 1./partitions));
+            auto numPartitionsLeft = partitions;
+            auto continuous = 0u;
+            for (auto i = 0u; i < numDimensions; i++) {
+                match(start_points[0][i], [&](Point<REAL_TYPE>) {
+                        continuous++;
+                    }, [&](Point<DISCRETE_TYPE> p) {
+                        splits[i] = std::min((DISCRETE_TYPE)maxPartitions, p.right - p.left + 1);
+                        numPartitionsLeft = std::lround(numPartitionsLeft / (double)splits[i]);
+                    });
+            }
+            for (auto& split: splits) {
+                if (split == -1)
+                    split = std::lround(std::pow(numPartitionsLeft, 1./continuous));
+            }
+
+            auto actualPartitions = 1u;
+            for (auto split: splits)
+                actualPartitions *= split;
+
+            std::cout << "Getting " << actualPartitions << " when we wanted " << numPartitions << std::endl;
+            ret[0] = start_points[0];
+            for (auto i = 1u; i < actualPartitions; i++) {
+                ret[i] = ret[i-1];
+                auto tick = false;
+                auto j = 0;
+                do {
+                    match(ret[i][j], [&](Point<REAL_TYPE> p) {
+                        REAL_TYPE left;
+                        auto start_point = boost::get<Point<REAL_TYPE>>(start_points[0][j]);
+                        auto jump = (start_point.right - start_point.left) / splits[j];
+                        if (std::fabs(p.right - start_point.right) <= std::numeric_limits<REAL_TYPE>::epsilon()) {
+                            tick = true;
+                            left = p.left;
+                        } else {
+                            left = p.right;
+                        }
+                        ret[i][j] = Point<REAL_TYPE>(left + jump/2, left, left + jump);
+                    }, [&](Point<DISCRETE_TYPE> p) {
+                        DISCRETE_TYPE left;
+                        if (p.right == boost::get<Point<DISCRETE_TYPE>>(start_points[0][j]).right) {
+                            tick = true;
+                            left = p.left;
+                        } else {
+                            left = p.right;
+                        }
+                        ret[i][j] = Point<DISCRETE_TYPE>(left, left, left + 1);
+                    });
+                    j++;
+                } while (tick);
+            }
+            return ret;
+        };
+
+        std::vector<points_vector> partition_vector = generatePartitions(partitions);
+        for (auto partition : partition_vector) {
+            MPI::COMM_WORLD.Isend(&partition.front(), numDimensions * sizeof(partition[0]), MPI::CHAR, i, DATA_TAG);
+            i = (i + 1) % numprocs; if (i == 0) ++i;
+        }
+        for (auto i = 1; i < numprocs; i++) {
+            std::clog << "Sending DIE_TAG to process " << i << std::endl;
+            MPI::COMM_WORLD.Isend(&partition_vector[0].front(), numDimensions*sizeof(partition_vector[0][0]), MPI::CHAR, i, DIE_TAG);
+        }
+        auto counter = 0;
+        while (counter < partitions) {
+            double candidateBest;
+            unsigned long long candidateFunctionCalls, candidateTotalFunctionCalls;
+            points_vector candidateData(numDimensions);
+            MPI::COMM_WORLD.Recv(&candidateFunctionCalls, 1, MPI::UNSIGNED_LONG_LONG, MPI::ANY_SOURCE, MPI::ANY_TAG, stat)
+            MPI::COMM_WORLD.Recv(&candidateTotalFunctionCalls, 1, MPI::UNSIGNED_LONG_LONG, stat.Get_source(), MPI::ANY_TAG, stat)
+            MPI::COMM_WORLD.Recv(&candidateBest, 1, MPI::DOUBLE, stat.Get_source(), MPI::ANY_TAG, stat)
+            MPI::COMM_WORLD.Recv(&candidateData.front(), numDimensions * sizeof(candidateData[0]), MPI::CHAR, stat.Get_source(), MPI::ANY_TAG, stat)
+            if (candidateBest < globalBest) {
+                globalBest = candidateBest;
+                globalData = candidateData;
+            }
+            function_calls += candidateFunctionCalls;
+            total_function_calls += candidateTotalFunctionCalls;
+            counter++;
+        }
+    } else {
+        std::string basename = std::to_string(rank) + ".rtree";
+        SpatialIndex::IStorageManager* diskfile = SpatialIndex::StorageManager::createNewDiskStorageManager(basename, 4096);
+        SpatialIndex::StorageManager::IBuffer* file = SpatialIndex::StorageManager::createNewRandomEvictionsBuffer(*diskfile, 10, false);
+        SpatialIndex::id_type indexIdentifier;
+        tree = SpatialIndex::RTree::createNewRTree(*file, 0.7, 100, 100, /*points.size()*/2, SpatialIndex::RTree::RV_RSTAR, indexIdentifier);
+
+        while (1) {
+            points_vector data(numDimensions);
+            REAL_TYPE f
+            MPI::COMM_WORLD.Recv(&data.front(), dim*sizeof(data[0]), MPI::CHAR, 0, MPI::ANY_TAG, stat); 
+            if (stat.Get_tag() == DIE_TAG) break;
+
+            std::tie(output, f) = particle_swarm(rosenbrock, data);
+            std::tie(output, f) = mesh_search(rosenbrock, output);
+            MPI::COMM_WORLD.Isend(function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
+            MPI::COMM_WORLD.Isend(total_function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
+            MPI::COMM_WORLD.Isend(f, 1, MPI::DOUBLE, 0, 0);
+            MPI::COMM_WORLD.Isend(&output.front(), output.size() * sizeof(data[0]), MPI::CHAR, 0, DIE_TAG);
+        }
+    }
+
+    MPI::Finalize();
+    return 0;
 
     std::vector<points_vector> start_points = {{Point<double>(0.0, -1.0, 2.0), Point<long long>(0, -1, 2)},
                                                 {Point<double>(0.1, -1.0, 2.0), Point<long long>(-1, -1, 2)}};
