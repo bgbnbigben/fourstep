@@ -1,5 +1,6 @@
 #include "common.h"
 #include "libspatialindex/include/spatialindex/SpatialIndex.h"
+#include "clp/build/include/coin/CoinMpsIO.hpp"
 #include <iostream>
 #include <random>
 #include "point.h"
@@ -70,14 +71,14 @@ REAL_TYPE rosenbrock(const points_vector& x) {
 
     auto start = extractReal(x[0]);
     auto ret_val = (1.0 - start)*(1 - start);
-    std::cerr << "Testing ("; 
+    std::cout << "Testing ("; 
     for (auto i = x.size() - 1; i > 0; i--) {
-        std::cerr << extractReal(x[i]) << ", ";
+        std::cout << extractReal(x[i]) << ", ";
         auto curr = extractReal(x[i]);
         auto next = extractReal(x[i-1]);
         ret_val += 100*(curr - next*next)*(curr - next*next);
     }
-    std::cerr << extractReal(x[0]) << ")" << std::endl;
+    std::cout << extractReal(x[0]) << ")" << std::endl;
 
     tree->insertData(sizeof(REAL_TYPE), reinterpret_cast<const byte*>(&ret_val), point_region, id++);
     ++function_calls;
@@ -99,9 +100,119 @@ void test() {
 #define DATA_TAG 0xd474
 #define DIE_TAG 0xd1ed1e
 
+std::vector<double> lower;
+std::vector<double> upper;
+std::vector<double> objCoeffs;
+std::vector<std::vector<double>> constraints;
+std::vector<char> type;
+double objOffset;
+
+REAL_TYPE mpsFunction(const points_vector& x) {
+    auto ret = objOffset;
+    auto penalty = 100;
+    for (auto i = 0u; i < x.size(); i++) {
+        ret += match(x[i], [&](Point<REAL_TYPE> p) {
+            return p() * objCoeffs[i];
+        }, [&](Point<DISCRETE_TYPE> p) {
+            return p() * objCoeffs[i];
+        });
+    }
+
+    for (auto i = 0u; i < constraints.size(); i++) {
+        auto constraint = 0.0;
+        for (auto j = 0u; j < x.size(); i++) {
+            constraint += match(x[i], [&](Point<REAL_TYPE> p) {
+                return p() * constraints[i][j];
+            }, [&](Point<DISCRETE_TYPE> p) {
+                return p() * constraints[i][j];
+            });
+        }
+        switch (type[i]) {
+            case 'G':
+                if (constraint - lower[i] < 0) {
+                    ret += penalty * (lower[i] - constraint);
+                }
+                break;
+            case 'L':
+                if (constraint - upper[i] > 0) {
+                    ret += penalty * (constraint - upper[i]);
+                }
+                break;
+            case 'R':
+                if (constraint - lower[i] < 0) {
+                    ret += penalty * (lower[i] - constraint);
+                }
+                if (constraint - upper[i] > 0) {
+                    ret += penalty * (upper[i] - constraint);
+                }
+                break;
+            case 'E':
+                if (constraint != upper[i]) {
+                    ret += penalty * (upper[i] - constraint) * ((upper[i] > constraint) ? 1. : -1.);
+                }
+                break;
+        }
+    }
+    return ret;
+}
 
 int main(int argc, char* argv[]) {
     MPI::Init(argc, argv);
+
+    CoinMpsIO m; 
+    m.readMps(argv[1], "");
+
+    objOffset = m.objectiveOffset();
+    objCoeffs.resize(m.getNumCols());
+    lower.resize(m.getNumRows());
+    upper.resize(m.getNumRows());
+    type.resize(m.getNumRows());
+    constraints.resize(m.getNumRows());
+    for (auto i = 0u; i < constraints.size(); i++) {
+        constraints[i].resize(m.getNumCols());
+        type[i] = m.getRowSense()[i];
+        switch (type[i]) {
+            case 'G':
+                lower[i] = m.getRowLower()[i];
+                break;
+            case 'E':
+            case 'L':
+                upper[i] = m.getRowUpper()[i];
+                break;
+            case 'R':
+                lower[i] = m.getRowLower()[i];
+                upper[i] = m.getRowUpper()[i];
+                break;
+        }
+    }
+
+    for (auto i = 0; i < m.getNumCols(); i++) {
+        objCoeffs[i] = m.getObjCoefficients()[i];
+    }
+
+    auto matrix = m.getMatrixByRow();
+    for (auto i = 0, j = 0; i < matrix->getNumElements(); i++) {
+        if (i == 0)
+            constraints[j][matrix->getIndices()[0]] = matrix->getElements()[0];
+        else if (matrix->getIndices()[i] < matrix->getIndices()[i-1]) {
+            constraints[++j][matrix->getIndices()[i]] = matrix->getElements()[i];
+        } else {
+            constraints[j][matrix->getIndices()[i]] = matrix->getElements()[i];
+        }
+    }
+
+    std::vector<points_vector> start_points(1);
+    if (m.integerColumns() != nullptr) {
+        for (auto i = 0; i < m.getNumCols(); i++) {
+            if (m.integerColumns()[i]) {
+                start_points[0].push_back(Point<DISCRETE_TYPE>(m.getColLower()[i], m.getColLower()[i], m.getColUpper()[i]));
+            } else {
+                start_points[0].push_back(Point<REAL_TYPE>(m.getColLower()[i], m.getColLower()[i], m.getColUpper()[i]));
+            }
+        }
+    }
+
+
 
     MPI::Status stat;
     auto numprocs = MPI::COMM_WORLD.Get_size();
@@ -222,11 +333,27 @@ int main(int argc, char* argv[]) {
             std::cout << "Process " << rank << " received data " << std::endl;
             if (stat.Get_tag() == DIE_TAG) break;
 
-            std::tie(output, f) = particle_swarm(rosenbrock, data);
-            std::tie(output, f) = mesh_search(rosenbrock, output);
-            MPI::COMM_WORLD.Isend(function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
-            MPI::COMM_WORLD.Isend(total_function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
-            MPI::COMM_WORLD.Isend(f, 1, MPI::DOUBLE, 0, 0);
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            for (auto i = 0u; i < numSwarmParticles; i++) {
+                data[i] = start_partition;
+                for (auto j = 0u; j < numDimensions; j++) {
+                    match(data[i][j], [&](Point<REAL_TYPE> p) {
+                        std::uniform_real_distribution<REAL_TYPE> real(p.left, p.right);
+                        data[i][j] = Point<REAL_TYPE>(real(gen), p.left, p.right);
+                    }, [&](Point<DISCRETE_TYPE> p) {
+                        std::uniform_int_distribution<DISCRETE_TYPE> disc(p.left, p.right);
+                        data[i][j] = Point<DISCRETE_TYPE>(disc(gen), p.left, p.right);
+                    });
+                }
+            }
+
+
+            std::tie(output, f) = particle_swarm(mpsFunction, data);
+            std::tie(output, f) = mesh_search(mpsFunction, output);
+            MPI::COMM_WORLD.Isend(&function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
+            MPI::COMM_WORLD.Isend(&total_function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
+            MPI::COMM_WORLD.Isend(&f, 1, MPI::DOUBLE, 0, 0);
             MPI::COMM_WORLD.Isend(&output.front(), output.size() * sizeof(data[0]), MPI::CHAR, 0, DIE_TAG);
         }
     }
