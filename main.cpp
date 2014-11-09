@@ -4,7 +4,7 @@
 #include <random>
 #include "point.h"
 #include "mesh_search.h"
-//#include <mpi.h>
+#include <mpi.h>
 
 
 //class varPoint;
@@ -96,7 +96,7 @@ void test() {
     std::cout << "new point = " << rosenbrock(x) << std::endl;
 }
 
-
+#define DATA_TAG 0xd474
 #define DIE_TAG 0xd1ed1e
 
 
@@ -107,16 +107,13 @@ int main(int argc, char* argv[]) {
     auto numprocs = MPI::COMM_WORLD.Get_size();
     auto rank = MPI::COMM_WORLD.Get_rank();
     MPI::COMM_WORLD.Set_errhandler(MPI::ERRORS_ARE_FATAL);
-    std::vector<points_vector> start_points = {{Point<double>(0.0, -1.0, 2.0), Point<long long>(0, -1, 2)},
-                                                {Point<double>(0.1, -1.0, 2.0), Point<long long>(-1, -1, 2)}};
     auto numDimensions = start_points[0].size();
     // Fuck it, bin process 0 as only a data marshall. Whatever.
     if (rank == 0) {
         auto globalBest = std::numeric_limits<double>::max();
-        points_vector globalData(numDimensions);
+        points_vector globalData;
         auto partitions = 100;
         auto generatePartitions = [&](auto numPartitions) {
-            std::vector<points_vector> ret(partitions);
             std::vector<int> splits(numDimensions, -1);
             auto maxPartitions = std::lround(std::pow(numDimensions, 1./partitions));
             auto numPartitionsLeft = partitions;
@@ -139,6 +136,7 @@ int main(int argc, char* argv[]) {
                 actualPartitions *= split;
 
             std::cout << "Getting " << actualPartitions << " when we wanted " << numPartitions << std::endl;
+            std::vector<points_vector> ret(actualPartitions);
             ret[0] = start_points[0];
             for (auto i = 1u; i < actualPartitions; i++) {
                 ret[i] = ret[i-1];
@@ -167,29 +165,36 @@ int main(int argc, char* argv[]) {
                         ret[i][j] = Point<DISCRETE_TYPE>(left, left, left + 1);
                     });
                     j++;
-                } while (tick);
+                } while (tick && j < ret[i].size());
             }
             return ret;
         };
 
         std::vector<points_vector> partition_vector = generatePartitions(partitions);
+        auto i = 1;
         for (auto partition : partition_vector) {
+            std::cout << "Sending to process " << i << std::endl;
             MPI::COMM_WORLD.Isend(&partition.front(), numDimensions * sizeof(partition[0]), MPI::CHAR, i, DATA_TAG);
             i = (i + 1) % numprocs; if (i == 0) ++i;
         }
         for (auto i = 1; i < numprocs; i++) {
-            std::clog << "Sending DIE_TAG to process " << i << std::endl;
+            std::cout << "Sending DIE_TAG to process " << i << std::endl;
             MPI::COMM_WORLD.Isend(&partition_vector[0].front(), numDimensions*sizeof(partition_vector[0][0]), MPI::CHAR, i, DIE_TAG);
         }
         auto counter = 0;
         while (counter < partitions) {
             double candidateBest;
             unsigned long long candidateFunctionCalls, candidateTotalFunctionCalls;
-            points_vector candidateData(numDimensions);
-            MPI::COMM_WORLD.Recv(&candidateFunctionCalls, 1, MPI::UNSIGNED_LONG_LONG, MPI::ANY_SOURCE, MPI::ANY_TAG, stat)
-            MPI::COMM_WORLD.Recv(&candidateTotalFunctionCalls, 1, MPI::UNSIGNED_LONG_LONG, stat.Get_source(), MPI::ANY_TAG, stat)
-            MPI::COMM_WORLD.Recv(&candidateBest, 1, MPI::DOUBLE, stat.Get_source(), MPI::ANY_TAG, stat)
-            MPI::COMM_WORLD.Recv(&candidateData.front(), numDimensions * sizeof(candidateData[0]), MPI::CHAR, stat.Get_source(), MPI::ANY_TAG, stat)
+            // Don't care about the value; it'll be overwritten
+            points_vector candidateData(numDimensions, Point<REAL_TYPE>(0., 0., 0.));
+            MPI::COMM_WORLD.Recv(&candidateFunctionCalls, 1, MPI::UNSIGNED_LONG_LONG, MPI::ANY_SOURCE, MPI::ANY_TAG, stat);
+            std::cout << "Got " << candidateFunctionCalls << " calls\n";
+            MPI::COMM_WORLD.Recv(&candidateTotalFunctionCalls, 1, MPI::UNSIGNED_LONG_LONG, stat.Get_source(), MPI::ANY_TAG, stat);
+            std::cout << "Out of " << candidateTotalFunctionCalls << " calls\n";
+            MPI::COMM_WORLD.Recv(&candidateBest, 1, MPI::DOUBLE, stat.Get_source(), MPI::ANY_TAG, stat);
+            std::cout << "Candiate best was " << candidateBest << std::endl;
+            MPI::COMM_WORLD.Recv(&candidateData.front(), numDimensions * sizeof(candidateData[0]), MPI::CHAR, stat.Get_source(), MPI::ANY_TAG, stat);
+            std::cout << "Received the point " << std::endl;
             if (candidateBest < globalBest) {
                 globalBest = candidateBest;
                 globalData = candidateData;
@@ -203,12 +208,18 @@ int main(int argc, char* argv[]) {
         SpatialIndex::IStorageManager* diskfile = SpatialIndex::StorageManager::createNewDiskStorageManager(basename, 4096);
         SpatialIndex::StorageManager::IBuffer* file = SpatialIndex::StorageManager::createNewRandomEvictionsBuffer(*diskfile, 10, false);
         SpatialIndex::id_type indexIdentifier;
-        tree = SpatialIndex::RTree::createNewRTree(*file, 0.7, 100, 100, /*points.size()*/2, SpatialIndex::RTree::RV_RSTAR, indexIdentifier);
+        tree = SpatialIndex::RTree::createNewRTree(*file, 0.7, 100, 100, numDimensions, SpatialIndex::RTree::RV_RSTAR, indexIdentifier);
+        auto numSwarmParticles = 10u;
 
         while (1) {
-            points_vector data(numDimensions);
-            REAL_TYPE f
-            MPI::COMM_WORLD.Recv(&data.front(), dim*sizeof(data[0]), MPI::CHAR, 0, MPI::ANY_TAG, stat); 
+            std::vector<points_vector> data(numSwarmParticles);
+            REAL_TYPE f;
+            // As above, who cares; it'll be overwritten
+            points_vector start_partition(numDimensions, Point<REAL_TYPE>(0., 0., 0.));
+            points_vector output;
+            std::cout << "Process " << rank << " blocking on recv" << std::endl;
+            MPI::COMM_WORLD.Recv(&start_partition.front(), numDimensions*sizeof(start_partition[0]), MPI::CHAR, 0, MPI::ANY_TAG, stat); 
+            std::cout << "Process " << rank << " received data " << std::endl;
             if (stat.Get_tag() == DIE_TAG) break;
 
             std::tie(output, f) = particle_swarm(rosenbrock, data);
@@ -221,30 +232,5 @@ int main(int argc, char* argv[]) {
     }
 
     MPI::Finalize();
-    return 0;
-
-    std::vector<points_vector> start_points = {{Point<double>(0.0, -1.0, 2.0), Point<long long>(0, -1, 2)},
-                                                {Point<double>(0.1, -1.0, 2.0), Point<long long>(-1, -1, 2)}};
-    points_vector output;
-    REAL_TYPE f;
-
-    std::tie(output, f) = particle_swarm(rosenbrock, start_points);
-    std::cout << "Seeding mesh_search with (";
-    for (auto p : output) {
-        std::cout << extractReal(p) << " ";
-    }
-    std::cout << "\b) for a value of " << f << std::endl;
-    //output = start_points[0];
-
-    std::tie(output, f) = mesh_search(rosenbrock, output);
-    std::cout << "Best f was " << f << std::endl;
-    for (auto p : output)
-        std::cout << extractReal(p) << " ";
-    std::cout << std::endl;
-
-    std::cout << "A total of " << function_calls << " calls out of " << total_function_calls << std::endl;
-
-    //test();
-
     return 0;
 }
