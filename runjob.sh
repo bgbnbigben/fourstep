@@ -12,10 +12,14 @@
 cd $PBS_O_WORKDIR
 echo $PBS_O_WORKDIR
 ulimit -c unlimited
+ulimit -s unlimited
+echo `ulimit -c`
+echo `ulimit -s`
 module load gcc/4.9.1
 module load openmpi-gcc/1.8.3
 module load boost/1.54.0-gcc
 module unload gcc/4.8.2
 module unload gcc/4.7.2 
+export PBSCOREDUMP=1
 export LD_LIBRARY_PATH=clp/build/lib/:$LD_LIBRARY_PATH 
 mpiexec ./main markshare_5_0.mps.gz
