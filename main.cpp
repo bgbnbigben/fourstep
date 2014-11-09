@@ -120,8 +120,9 @@ REAL_TYPE mpsFunction(const points_vector& x) {
 
     for (auto i = 0u; i < constraints.size(); i++) {
         auto constraint = 0.0;
-        for (auto j = 0u; j < x.size(); i++) {
-            constraint += match(x[i], [&](Point<REAL_TYPE> p) {
+        for (auto j = 0u; j < x.size(); j++) {
+            std::cout << "Examining constraint " << i << " and variable " << j << std::endl;
+            constraint += match(x[j], [&](Point<REAL_TYPE> p) {
                 return p() * constraints[i][j];
             }, [&](Point<DISCRETE_TYPE> p) {
                 return p() * constraints[i][j];
