@@ -354,7 +354,7 @@ int main(int argc, char* argv[]) {
             MPI::COMM_WORLD.Isend(&function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
             MPI::COMM_WORLD.Isend(&total_function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
             MPI::COMM_WORLD.Isend(&f, 1, MPI::DOUBLE, 0, 0);
-            MPI::COMM_WORLD.Isend(&output.front(), output.size() * sizeof(data[0]), MPI::CHAR, 0, DIE_TAG);
+            MPI::COMM_WORLD.Isend(&output.front(), output.size() * sizeof(output[0]), MPI::CHAR, 0, DIE_TAG);
         }
     }
 
