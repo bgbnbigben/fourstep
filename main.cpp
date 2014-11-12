@@ -109,7 +109,7 @@ double objOffset;
 
 REAL_TYPE mpsFunction(const points_vector& x) {
     auto ret = objOffset;
-    auto penalty = 100;
+    auto penalty = 1;
     for (auto i = 0u; i < x.size(); i++) {
         ret += match(x[i], [&](Point<REAL_TYPE> p) {
             return p() * objCoeffs[i];
@@ -120,8 +120,8 @@ REAL_TYPE mpsFunction(const points_vector& x) {
 
     for (auto i = 0u; i < constraints.size(); i++) {
         auto constraint = 0.0;
+        assert(constraints[i].size() == x.size());
         for (auto j = 0u; j < x.size(); j++) {
-            std::cout << "Examining constraint " << i << " and variable " << j << std::endl;
             constraint += match(x[j], [&](Point<REAL_TYPE> p) {
                 return p() * constraints[i][j];
             }, [&](Point<DISCRETE_TYPE> p) {
@@ -169,6 +169,7 @@ int main(int argc, char* argv[]) {
     upper.resize(m.getNumRows());
     type.resize(m.getNumRows());
     constraints.resize(m.getNumRows());
+    std::cout << "There are " << m.getNumRows() << " constraints " << std::endl;
     for (auto i = 0u; i < constraints.size(); i++) {
         constraints[i].resize(m.getNumCols());
         type[i] = m.getRowSense()[i];
@@ -203,16 +204,17 @@ int main(int argc, char* argv[]) {
     }
 
     std::vector<points_vector> start_points(1);
-    if (m.integerColumns() != nullptr) {
-        for (auto i = 0; i < m.getNumCols(); i++) {
-            if (m.integerColumns()[i]) {
-                start_points[0].push_back(Point<DISCRETE_TYPE>(m.getColLower()[i], m.getColLower()[i], m.getColUpper()[i]));
-            } else {
-                start_points[0].push_back(Point<REAL_TYPE>(m.getColLower()[i], m.getColLower()[i], m.getColUpper()[i]));
-            }
+    for (auto i = 0; i < m.getNumCols(); i++) {
+        if (m.integerColumns() != nullptr && m.integerColumns()[i]) {
+            auto upper = m.getColUpper()[i];
+            if (upper == std::numeric_limits<double>::max()) upper = 100000;
+            start_points[0].push_back(Point<DISCRETE_TYPE>(m.getColLower()[i], m.getColLower()[i], upper));
+        } else {
+            auto upper = m.getColUpper()[i];
+            if (upper == std::numeric_limits<double>::max()) upper = 100000.;
+            start_points[0].push_back(Point<REAL_TYPE>(m.getColLower()[i], m.getColLower()[i], upper));
         }
     }
-
 
 
     MPI::Status stat;
@@ -220,6 +222,7 @@ int main(int argc, char* argv[]) {
     auto rank = MPI::COMM_WORLD.Get_rank();
     MPI::COMM_WORLD.Set_errhandler(MPI::ERRORS_ARE_FATAL);
     auto numDimensions = start_points[0].size();
+    std::cout << "There are " << numDimensions << " dimensions" << std::endl;
     // Fuck it, bin process 0 as only a data marshall. Whatever.
     if (rank == 0) {
         auto globalBest = std::numeric_limits<double>::max();
@@ -283,15 +286,15 @@ int main(int argc, char* argv[]) {
         };
 
         std::vector<points_vector> partition_vector = generatePartitions(partitions);
-        auto i = 1;
+        auto proc_i = 1;
         for (auto partition : partition_vector) {
-            std::cout << "Sending to process " << i << std::endl;
-            MPI::COMM_WORLD.Isend(&partition.front(), numDimensions * sizeof(partition[0]), MPI::CHAR, i, DATA_TAG);
-            i = (i + 1) % numprocs; if (i == 0) ++i;
+            std::cout << "Sending to process " << proc_i << std::endl;
+            MPI::COMM_WORLD.Send(&partition.front(), numDimensions * sizeof(partition[0]), MPI::CHAR, proc_i, DATA_TAG);
+            proc_i = (proc_i + 1) % numprocs; if (proc_i == 0) ++proc_i;
         }
         for (auto i = 1; i < numprocs; i++) {
             std::cout << "Sending DIE_TAG to process " << i << std::endl;
-            MPI::COMM_WORLD.Isend(&partition_vector[0].front(), numDimensions*sizeof(partition_vector[0][0]), MPI::CHAR, i, DIE_TAG);
+            MPI::COMM_WORLD.Send(&partition_vector[0].front(), numDimensions*sizeof(partition_vector[0][0]), MPI::CHAR, i, DIE_TAG);
         }
         auto counter = 0;
         while (counter < partitions) {
@@ -299,6 +302,7 @@ int main(int argc, char* argv[]) {
             unsigned long long candidateFunctionCalls, candidateTotalFunctionCalls;
             // Don't care about the value; it'll be overwritten
             points_vector candidateData(numDimensions, Point<REAL_TYPE>(0., 0., 0.));
+            std::cout << "Master blocking while trying to receive function calls back" << std::endl;
             MPI::COMM_WORLD.Recv(&candidateFunctionCalls, 1, MPI::UNSIGNED_LONG_LONG, MPI::ANY_SOURCE, MPI::ANY_TAG, stat);
             std::cout << "Got " << candidateFunctionCalls << " calls\n";
             MPI::COMM_WORLD.Recv(&candidateTotalFunctionCalls, 1, MPI::UNSIGNED_LONG_LONG, stat.Get_source(), MPI::ANY_TAG, stat);
@@ -316,7 +320,7 @@ int main(int argc, char* argv[]) {
             counter++;
         }
     } else {
-        std::string basename = std::to_string(rank) + ".rtree";
+        std::string basename = "rtrees/" + std::to_string(rank) + ".rtree";
         SpatialIndex::IStorageManager* diskfile = SpatialIndex::StorageManager::createNewDiskStorageManager(basename, 4096);
         SpatialIndex::StorageManager::IBuffer* file = SpatialIndex::StorageManager::createNewRandomEvictionsBuffer(*diskfile, 10, false);
         SpatialIndex::id_type indexIdentifier;
@@ -324,20 +328,23 @@ int main(int argc, char* argv[]) {
         auto numSwarmParticles = 10u;
 
         while (1) {
-            std::vector<points_vector> data(numSwarmParticles);
             REAL_TYPE f;
             // As above, who cares; it'll be overwritten
             points_vector start_partition(numDimensions, Point<REAL_TYPE>(0., 0., 0.));
-            points_vector output;
+            points_vector output(numDimensions, Point<REAL_TYPE>(0., 0., 0.));
             std::cout << "Process " << rank << " blocking on recv" << std::endl;
             MPI::COMM_WORLD.Recv(&start_partition.front(), numDimensions*sizeof(start_partition[0]), MPI::CHAR, 0, MPI::ANY_TAG, stat); 
-            std::cout << "Process " << rank << " received data " << std::endl;
+            std::cout << "Process " << rank << " received data of size " << numDimensions * sizeof(start_partition[0]) << std::endl;
             if (stat.Get_tag() == DIE_TAG) break;
 
             std::random_device rd;
             std::mt19937 gen(rd());
+            std::vector<points_vector> data(numSwarmParticles);
             for (auto i = 0u; i < numSwarmParticles; i++) {
-                data[i] = start_partition;
+                data[i].resize(numDimensions, Point<REAL_TYPE>(0., 0., 0.));
+                for (auto j = 0u; j < numDimensions; j++)  {
+                    data[i][j] = start_partition[j];
+                }
                 for (auto j = 0u; j < numDimensions; j++) {
                     match(data[i][j], [&](Point<REAL_TYPE> p) {
                         std::uniform_real_distribution<REAL_TYPE> real(p.left, p.right);
@@ -349,13 +356,15 @@ int main(int argc, char* argv[]) {
                 }
             }
 
-
+            std::cout << "swarm " << std::endl;
             std::tie(output, f) = particle_swarm(mpsFunction, data);
+            std::cout << "mesh " << std::endl;
             std::tie(output, f) = mesh_search(mpsFunction, output);
-            MPI::COMM_WORLD.Isend(&function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
-            MPI::COMM_WORLD.Isend(&total_function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
-            MPI::COMM_WORLD.Isend(&f, 1, MPI::DOUBLE, 0, 0);
-            MPI::COMM_WORLD.Isend(&output.front(), output.size() * sizeof(output[0]), MPI::CHAR, 0, DIE_TAG);
+            std::cout << "sending back " << std::endl;
+            MPI::COMM_WORLD.Send(&function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
+            MPI::COMM_WORLD.Send(&total_function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
+            MPI::COMM_WORLD.Send(&f, 1, MPI::DOUBLE, 0, 0);
+            MPI::COMM_WORLD.Send(&output.front(), output.size() * sizeof(output[0]), MPI::CHAR, 0, DIE_TAG);
         }
     }
 
