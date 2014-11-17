@@ -6,6 +6,7 @@
 #include "point.h"
 #include "mesh_search.h"
 #include <mpi.h>
+#include "parser.h"
 
 
 //class varPoint;
@@ -61,8 +62,8 @@ REAL_TYPE rosenbrock(const points_vector& x) {
             });
         casted[i] = extractReal(x[i]);
     }
-    SpatialIndex::Region point_region(&low[0], &high[0], x.size());
-    SpatialIndex::Point point(&casted[0], x.size());
+    SpatialIndex::Region point_region(&low.front(), &high.front(), x.size());
+    SpatialIndex::Point point(&casted.front(), x.size());
     CheckerVisitor visitor;
     tree->pointLocationQuery(point, visitor);
     if (visitor.found()) {
@@ -86,15 +87,19 @@ REAL_TYPE rosenbrock(const points_vector& x) {
 }
 
 void test() {
-    coord_type low[2]; low[0] = -1ll, low[1] = -1ll;
-    coord_type high[2]; high[0] = 1ll, high[1] = 0ll;
-    coord_type higher[2]; higher[0] = 1ll, higher[1] = 1ll;
+    std::string basename = "rtrees/test.rtree";
+    SpatialIndex::IStorageManager* diskfile = SpatialIndex::StorageManager::createNewDiskStorageManager(basename, 4096);
+    SpatialIndex::StorageManager::IBuffer* file = SpatialIndex::StorageManager::createNewRandomEvictionsBuffer(*diskfile, 10, false);
+    SpatialIndex::id_type indexIdentifier;
+    tree = SpatialIndex::RTree::createNewRTree(*file, 0.7, 100, 100, 2 /*numDimensions*/, SpatialIndex::RTree::RV_RSTAR, indexIdentifier);
+
+    coord_type low[2]; low[0] = 0ll, low[1] = 0ll;
+    coord_type high[2]; high[0] = 1ll, high[1] = 1ll;
+    coord_type higher[2]; higher[0] = 0ll, higher[1] = 1ll;
     //assert(varRegion(varPoint(low, 2u), varPoint(higher, 2u)) == varRegion(varPoint(low, 2u), varPoint(higher, 2u)));
     //assert(!(varRegion(varPoint(low, 2u), varPoint(higher, 2u)) == varRegion(varPoint(low, 2u), varPoint(high, 2u))));
-    points_vector x = {Point<REAL_TYPE>(1.2, -1.0, 2.0), Point<REAL_TYPE>(1.0, -1.0, 2.0)};
-    std::cout << "This point = " << rosenbrock(x) << std::endl;
-    x = {Point<REAL_TYPE>(1.0, -1.0, 2.0), Point<REAL_TYPE>(1.0, -1.0, 2.0)};
-    std::cout << "new point = " << rosenbrock(x) << std::endl;
+    points_vector x = {Point<DISCRETE_TYPE>(0, 0, 1), Point<DISCRETE_TYPE>(0, 0, 1)};
+    mesh_search(rosenbrock, x);
 }
 
 #define DATA_TAG 0xd474
@@ -108,8 +113,36 @@ std::vector<char> type;
 double objOffset;
 
 REAL_TYPE mpsFunction(const points_vector& x) {
+try{
+    ++total_function_calls;
+    std::vector<double> low(x.size());
+    std::vector<double> high(x.size());
+    std::vector<double> casted(x.size());
+    # pragma omp parallel for 
+    for (auto i = 0u; i < x.size(); i++) {
+        low[i] = match(x[i], [&](Point<REAL_TYPE> p) {
+                return std::max(p.left, p() - cube_width);
+            }, [&] (Point<DISCRETE_TYPE> p) {
+                return std::max((double) p.left, (double)p() - cube_width);
+            });
+        high[i] = match(x[i], [&](Point<REAL_TYPE> p) {
+                return std::min(p.right, p() + cube_width);
+            }, [&] (Point<DISCRETE_TYPE> p) {
+                return std::min((double) p.right, (double)p() + cube_width);
+            });
+        casted[i] = extractReal(x[i]);
+    }
+    SpatialIndex::Region point_region(&low.front(), &high.front(), x.size());
+    SpatialIndex::Point point(&casted.front(), x.size());
+    CheckerVisitor visitor;
+    tree->pointLocationQuery(point, visitor);
+    if (visitor.found()) {
+        return visitor.data();
+    }
+
     auto ret = objOffset;
     auto penalty = 1;
+    # pragma omp parallel for 
     for (auto i = 0u; i < x.size(); i++) {
         ret += match(x[i], [&](Point<REAL_TYPE> p) {
             return p() * objCoeffs[i];
@@ -118,6 +151,7 @@ REAL_TYPE mpsFunction(const points_vector& x) {
         });
     }
 
+    # pragma omp parallel for 
     for (auto i = 0u; i < constraints.size(); i++) {
         auto constraint = 0.0;
         assert(constraints[i].size() == x.size());
@@ -154,12 +188,23 @@ REAL_TYPE mpsFunction(const points_vector& x) {
                 break;
         }
     }
+
+    tree->insertData(sizeof(REAL_TYPE), reinterpret_cast<const byte*>(&ret), point_region, (id++ % 1000));
+    ++function_calls;
+
     return ret;
+} catch (Tools::IllegalArgumentException& e) {
+    std::cerr << e.what() << std::endl;
+    throw;
+}
 }
 
 int main(int argc, char* argv[]) {
     MPI::Init(argc, argv);
+    std::vector<points_vector> start_points(1);
+    start_points[0] = parseGams(argv[1]);
 
+    /*
     CoinMpsIO m; 
     m.readMps(argv[1], "");
 
@@ -215,6 +260,7 @@ int main(int argc, char* argv[]) {
             start_points[0].push_back(Point<REAL_TYPE>(m.getColLower()[i], m.getColLower()[i], upper));
         }
     }
+    */
 
 
     MPI::Status stat;
@@ -227,7 +273,7 @@ int main(int argc, char* argv[]) {
     if (rank == 0) {
         auto globalBest = std::numeric_limits<double>::max();
         points_vector globalData;
-        auto partitions = 100;
+        auto partitions = 64;
         auto generatePartitions = [&](auto numPartitions) {
             std::vector<int> splits(numDimensions, -1);
             auto maxPartitions = std::lround(std::pow(numDimensions, 1./partitions));
@@ -319,12 +365,22 @@ int main(int argc, char* argv[]) {
             total_function_calls += candidateTotalFunctionCalls;
             counter++;
         }
+
+        std::cout << "GLOBAL BEST: " << globalBest << "\nFUNC_CALLS: " << function_calls << "\n:TOTAL_CALLS: " << total_function_calls << std::endl;
     } else {
-        std::string basename = "rtrees/" + std::to_string(rank) + ".rtree";
+        try {
+        std::string basename = "rtrees/" + std::string(argv[1]) + "-" + std::to_string(rank) + ".rtree";
+        std::cerr << "basename is " << basename << std::endl;
         SpatialIndex::IStorageManager* diskfile = SpatialIndex::StorageManager::createNewDiskStorageManager(basename, 4096);
+        std::cerr << "diskfile done" << std::endl;
         SpatialIndex::StorageManager::IBuffer* file = SpatialIndex::StorageManager::createNewRandomEvictionsBuffer(*diskfile, 10, false);
+        std::cerr << "rev buffer " << std::endl;
         SpatialIndex::id_type indexIdentifier;
-        tree = SpatialIndex::RTree::createNewRTree(*file, 0.7, 100, 100, numDimensions, SpatialIndex::RTree::RV_RSTAR, indexIdentifier);
+        tree = SpatialIndex::RTree::createNewRTree(*file, 0.7, 1000, 1000, numDimensions, SpatialIndex::RTree::RV_RSTAR, indexIdentifier);
+        } catch (Tools::IllegalArgumentException& e) {
+            std::cerr << e.what() << std::endl;
+            throw e;
+        }
         auto numSwarmParticles = 10u;
 
         while (1) {
@@ -332,7 +388,6 @@ int main(int argc, char* argv[]) {
             // As above, who cares; it'll be overwritten
             points_vector start_partition(numDimensions, Point<REAL_TYPE>(0., 0., 0.));
             points_vector output(numDimensions, Point<REAL_TYPE>(0., 0., 0.));
-            std::cout << "Process " << rank << " blocking on recv" << std::endl;
             MPI::COMM_WORLD.Recv(&start_partition.front(), numDimensions*sizeof(start_partition[0]), MPI::CHAR, 0, MPI::ANY_TAG, stat); 
             std::cout << "Process " << rank << " received data of size " << numDimensions * sizeof(start_partition[0]) << std::endl;
             if (stat.Get_tag() == DIE_TAG) break;
@@ -357,14 +412,24 @@ int main(int argc, char* argv[]) {
             }
 
             std::cout << "swarm " << std::endl;
-            std::tie(output, f) = particle_swarm(mpsFunction, data);
+            //std::tie(output, f) = particle_swarm(mpsFunction, data);
+            std::tie(output, f) = particle_swarm(gamsFunc, data);
             std::cout << "mesh " << std::endl;
-            std::tie(output, f) = mesh_search(mpsFunction, output);
-            std::cout << "sending back " << std::endl;
+            std::tie(output, f) = mesh_search(gamsFunc, output);
+            std::cout << "Sending " << f << " which is at point" << "\n";
+            for (auto i = 0u; i < output.size(); i++) {
+                match(output[i], [&](Point<REAL_TYPE> p) {
+                    std::cout << p() << ",";
+                }, [&](Point<DISCRETE_TYPE> p) {
+                    std::cout << p() << ",";
+                });
+            }
+            std::cout << std::endl;
             MPI::COMM_WORLD.Send(&function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
             MPI::COMM_WORLD.Send(&total_function_calls, 1, MPI::UNSIGNED_LONG_LONG, 0, 0);
             MPI::COMM_WORLD.Send(&f, 1, MPI::DOUBLE, 0, 0);
             MPI::COMM_WORLD.Send(&output.front(), output.size() * sizeof(output[0]), MPI::CHAR, 0, DIE_TAG);
+            std::cout << "sent" << std::endl;
         }
     }
 
