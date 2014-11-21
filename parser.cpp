@@ -116,7 +116,6 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                 j--;
             }
         }
-        std::cout << "Turned " << objFunc[i] << " into " << replaced << std::endl;
         if (i + 1 != objFunc.size()) {
             // This is a constraint
             size_t finder;
@@ -130,14 +129,12 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     eq = true;
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+2, f2));
-                    std::cout << left << "<=" << right << std::endl;
                     if (left > right)
                         ret += 10*(left - right);
                 } else {
                     /* < */
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+1, f2));
-                    std::cout << left << "<" << right << std::endl;
                     if (left >= right)
                         ret += 10*(left - right) + 10;
                 }
@@ -146,14 +143,12 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     /* <= */
                     auto left = eval(replaced.substr(finder + 1 + eq, f2));
                     auto right = eval(replaced.substr(f2+2));
-                    std::cout << left << "<=" << right << std::endl;
                     if (left > right)
                         ret += 10*(left - right);
                 } else {
                     /* < */
                     auto left = eval(replaced.substr(finder + 1 + eq, f2));
                     auto right = eval(replaced.substr(f2+1));
-                    std::cout << left << "=" << right << std::endl;
                     if (left >= right)
                         ret += 10*(left - right) + 10;
                 }
@@ -323,8 +318,10 @@ points_vector parseGams(char* f) {
                 data.append(line);
             }
             data.pop_back();
-            if (starts_with("EQUATION", line)) {
-                auto eqnTokens = split(data.substr(11), ',');
+            if (starts_with("EQUATION", data)) {
+                auto rest = data.substr(9);
+                stripStart(rest, " ");
+                auto eqnTokens = split(rest, ',');
                 std::vector<bool> eqns(eqnTokens.size(), false);
                 for (auto todo = eqnTokens.size(); todo; todo--) {
                     std::string ll, eqnData;
