@@ -4,3 +4,4 @@ main
 *.so*
 *.la
 *.rtree.*
+*.bar/
