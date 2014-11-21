@@ -340,10 +340,10 @@ int main(int argc, char* argv[]) {
         }
         for (auto i = 1; i < numprocs; i++) {
             std::cout << "Sending DIE_TAG to process " << i << std::endl;
-            MPI::COMM_WORLD.Send(&partition_vector[0].front(), numDimensions*sizeof(partition_vector[0][0]), MPI::CHAR, i, DIE_TAG);
+            MPI::COMM_WORLD.Isend(&partition_vector[0].front(), numDimensions*sizeof(partition_vector[0][0]), MPI::CHAR, i, DIE_TAG);
         }
         auto counter = 0;
-        while (counter < partitions) {
+        while (counter < partition_vector.size()) {
             double candidateBest;
             unsigned long long candidateFunctionCalls, candidateTotalFunctionCalls;
             // Don't care about the value; it'll be overwritten
