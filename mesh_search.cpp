@@ -35,111 +35,75 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
         std::cerr << "Constriction " << constrictions << std::endl;
         improvement = false;
         points_vector test(bestX);
+        meshWidth = pow(2.0, -constrictions);
 
-        unsigned long long numPoints = 1;
-        auto hamming = constrictions + 1;
-        auto numDisc = 0u;
-        unsigned long long nodesPerRow = pow(2, constrictions) + 1;
-        std::cerr << "There are up to " << nodesPerRow << " npr" << std::endl;
-        for (auto i = 0u; i < test.size(); i++) {
-            if (continuous[i]) {
-                numPoints *= nodesPerRow;
-            } else {
-                auto& p = boost::get<Point<DISCRETE_TYPE>>(bestX[i]);
-                hamming = std::min(hamming, p.right - p.left + 1);
-                numDisc++;
+        // Alright, so.
+        /* 
+         * x[i] is continuous.
+         * Attempt to set x[i] + e_i * mesh_width. If this is OOB, attempt
+         * x[i] - e_i * mesh_width, if this is OOB, we're kinda fucked and I
+         * guess we just poll some minimal distance L/R? If this is the case I
+         * think we repeat this procedure with mesh_width = x[i].right - x[i],
+         * unless it's zero at which point we do the same thing left. this
+         * should allow for some minimal increment, but we *have* to store this
+         * value so that we an add the negative of this to the set v (positive
+         * basis blah blah)
+         *
+         * x[i] is discrete.
+         * Set x[i] + 1_i, if it's OOB set x[i] - 1_i. There's literally no
+         * other place to go otherwise.
+         *
+         * Poll the new x, compared to the current centre and its best.
+         *
+         * If this point is the lowest on the mesh, take mesh_width / 2 for the
+         * continuous variables
+         *
+         * For the discrete variables, increase the `hamming distnace' such
+         * that we gain the next phi(hd) directions. In theory the current
+         * discrete code works for this but it's a giant flaming pile of shit
+         * that needs to be cleaned up.
+         */
+        std::vector<boost::variant<DISCRETE_TYPE, REAL_TYPE>> units;
+        for (auto i = 0u; i < bestX.size(); i++) {
+            match(bestX[i], [&] (Point<REAL_TYPE>& p) {
+                    auto dist = std::min(meshWidth, std::min(p.right - p(), p() - p.left));
+                    // YOLO always move right.
+                    units[i] = dist;
+                }, [&] (Point<DISCRETE_TYPE>& p) {
+                    auto dist = 1;
+                    if (p() == p.right)
+                        dist = -1;
+                    units[i] = dist;
+                });
+        }
+        // +1 for the negative sum.
+        for (auto i = 0u; i < units.size() + 1; i++) {
+            // make ALL THE COPIES
+            auto currentX = bestX;
+            if (i < units.size())
+                match(currentX[i], [&] (Point<REAL_TYPE>& p) { currentX[i] = Point<REAL_TYPE>(p() + boost::get<REAL_TYPE>(units[i]), p.left, p.right);},
+                                   [&] (Point<DISCRETE_TYPE>& p) { currentX[i] = Point<DISCRETE_TYPE>(p() + boost::get<DISCRETE_TYPE>(units[i]), p.left, p.right);});
+            else {
+                for (auto j = 0u; j < units.size(); j++) {
+                    match(currentX[j], [&] (Point<REAL_TYPE>& p) { currentX[j] = Point<REAL_TYPE>(p() - boost::get<REAL_TYPE>(units[j]), p.left, p.right);},
+                                       [&] (Point<DISCRETE_TYPE>& p) { currentX[j] = Point<DISCRETE_TYPE>(p() - boost::get<DISCRETE_TYPE>(units[j]), p.left, p.right);});
+                    match(currentX[j], [&] (Point<REAL_TYPE>& r) { r = Point<REAL_TYPE>(std::max(r.left, std::min(r.right, r())), r.left, r.right);},
+                                       [&] (Point<DISCRETE_TYPE>& r) { r = Point<DISCRETE_TYPE>(std::max(r.left, std::min(r.right, r())), r.left, r.right);});
+                }
             }
-        }
-        //(hamming + 1 + numDisc - 1) choose numDisc;
-        auto num = 1ull;
-        auto den = 1ull;
-        hamming++; // since we account for current point 
-        for (auto i = 1u; i <= numDisc; i++) {
-            num *= (hamming + i - 1);
-            den *= i;
-        }
-        numPoints *= (num / (double)den);
-
-        // there are min(npr, width+1, right - left + 1) nodes in a continuous row.
-        // This has been rounded down to an odd number
-        // a large portion of that statement is an outright lie.
-
-        # pragma omp parallel for
-        for (auto i = 0u; i < test.size(); i++) {
-            if (continuous[i]) {
-                auto& p = boost::get<Point<REAL_TYPE>>(test[i]);
-                auto left = (meshWidth < (p.right - p.left)) ? p() - meshWidth / 2 : p.left;
-                auto right = (meshWidth < (p.right - p.left)) ? p() + meshWidth / 2 : p.right;
-                if (i == 0) {
-                    test[i] = std::move(Point<REAL_TYPE>(left - (right - left)/(double)nodesPerRow, p.left, p.right));
-                } else {
-                    test[i] = std::move(Point<REAL_TYPE>(left, p.left, p.right));
-                }
-            } else {
-                auto& p = boost::get<Point<DISCRETE_TYPE>>(test[i]);
-                const auto best = boost::get<Point<DISCRETE_TYPE>>(bestX[i]);
-                auto inRow = hamming;
-                auto left = ::min(inRow / 2, best.val - best.left);
-                if (i == 0) {
-                    test[i] = std::move(Point<DISCRETE_TYPE>(best.val - left - 1, p.left, p.right));
-                } else {
-                    test[i] = std::move(Point<DISCRETE_TYPE>(best.val - left, p.left, p.right));
-                }
-            }
-        }
-
-        std::cerr << "We have " << numPoints << " points on constriction " << constrictions << std::endl;
-        for (auto pointNum = 0u; pointNum < numPoints; pointNum++) {
-            int i = 0;
-            bool tick = false;
-            do {
-                if (i >= test.size())
-                    break;
-                if (continuous[i]) {
-                    auto& current = boost::get<Point<REAL_TYPE>>(test[i]);
-                    test[i] = std::move(Point<REAL_TYPE>(current.val + (current.right - current.left) / (double)nodesPerRow, current.left, current.right));
-                    if (current.val > current.right) {
-                        test[i] = std::move(Point<REAL_TYPE>(current.left, current.left, current.right));
-                        i++;
-                        tick = true;
-                    } else {
-                        tick = false;
-                    }
-                } else {
-                    auto& current = boost::get<Point<DISCRETE_TYPE>>(test[i]);
-                    const auto best = boost::get<Point<DISCRETE_TYPE>>(bestX[i]);
-                    auto inRow = hamming;
-                    auto left = ::min(inRow / 2, best.val - best.left);
-                    auto right = ::min(inRow - left + 1, best.right);
-                    if (current.val + 1 > best.val + right) {
-                        test[i] = std::move(Point<DISCRETE_TYPE>(best.val - left, current.left, current.right));
-                        i++;
-                        tick = true;
-                    } else {
-                        test[i] = std::move(Point<DISCRETE_TYPE>(current.val + 1, current.left, current.right));
-                        tick = false;
-                    }
-                    if (current.val > current.right) {
-                        // This might be wrong, but attempt to go around again.
-                        pointNum++;
-                        tick = true;
-                        continue;
-                    }
-
-                }
-            } while (tick);
-            if (f(test) < bestF) {
-                std::cerr << "Best found" << std::endl;
-                bestF = f(test);
-                bestX = test;
+            auto currentF = f(currentX);
+            if (currentF < bestF) {
+                bestF = currentF;
+                bestX = currentX;
                 improvement = true;
-                constrictions = -1;
+                // GREEEEEEEEEEEEEEEED 
                 break;
             }
         }
-        // Should break to here.
-        constrictions++;
+        if (improvement == false)
+            constrictions++;
     }
+
     std::cerr << bestF << std::endl;
     return std::make_tuple(bestX, bestF);
 }
