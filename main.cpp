@@ -304,6 +304,7 @@ int main(int argc, char* argv[]) {
                 auto tick = false;
                 auto j = 0;
                 do {
+                    assert(start_points[0][j].which() == ret[i][j].which());
                     match(ret[i][j], [&](Point<REAL_TYPE> p) {
                         REAL_TYPE left;
                         auto start_point = boost::get<Point<REAL_TYPE>>(start_points[0][j]);

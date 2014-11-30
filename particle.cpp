@@ -25,6 +25,7 @@ void Particle::move() {
 }
 void Particle::updateVelocity(double w, double r1, double r2, const points_vector& bestX) {
     for (auto i = 0u; i < velocity.size(); i++) {
+        assert(best[i].which() == bestX[i].which());
         match(bestX[i], [&](Point<REAL_TYPE>) {
                 velocity[i] = w * velocity[i] + r1 * (boost::get<Point<REAL_TYPE>>(best[i])() - velocity[i]) + r2 * (boost::get<Point<REAL_TYPE>>(bestX[i])() - velocity[i]);
             }, [&](Point<DISCRETE_TYPE>) {

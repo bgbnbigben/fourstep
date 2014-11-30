@@ -6,6 +6,7 @@
 #include <vector>
 #include "shunting-yard.h"
 #include <cctype>
+#include <cstring>
 
 enum class Variable {
     Free,
@@ -44,7 +45,7 @@ bool isFunc(std::string s) {
 
 
 void show_error(Status status) {
-    char *message = NULL;
+    std::string message;
     switch (status) {
         case ERROR_SYNTAX:
             message = "Syntax error";
@@ -245,6 +246,7 @@ points_vector parseGams(char* f) {
                     if (type == Variable::Binary) {
                         auto found = varMap.find(token);
                         if (found != varMap.end()) { 
+                            assert(strcmp(found->second.type().name(), typeid(Point<DISCRETE_TYPE>(0, 0, 0)).name()) == 0);
                             auto old = boost::get<Point<DISCRETE_TYPE>>(found->second);
                             found->second = Point<DISCRETE_TYPE>(old(), 0, 1);
                         } else {
@@ -254,6 +256,9 @@ points_vector parseGams(char* f) {
                     } else {
                         auto found = varMap.find(token);
                         if (found != varMap.end()) { 
+                            // jfc
+                            // this line is 400% bullshit.
+                            assert(strcmp(found->second.type().name(), typeid(Point<DISCRETE_TYPE>(0, 0, 0)).name()) == 0);
                             auto old = boost::get<Point<DISCRETE_TYPE>>(found->second);
                             found->second = Point<DISCRETE_TYPE>(old(), old.left, old.right);
                         } else {

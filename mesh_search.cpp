@@ -63,7 +63,7 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
          * discrete code works for this but it's a giant flaming pile of shit
          * that needs to be cleaned up.
          */
-        std::vector<boost::variant<DISCRETE_TYPE, REAL_TYPE>> units;
+        std::vector<coord_type> units;
         for (auto i = 0u; i < bestX.size(); i++) {
             match(bestX[i], [&] (Point<REAL_TYPE>& p) {
                     auto dist = std::min(meshWidth, std::min(p.right - p(), p() - p.left));
@@ -80,10 +80,13 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
         for (auto i = 0u; i < units.size() + 1; i++) {
             // make ALL THE COPIES
             auto currentX = bestX;
-            if (i < units.size())
+            if (i < units.size()) {
+                assert(units[i].which() == currentX[i].which());
                 match(currentX[i], [&] (Point<REAL_TYPE>& p) { currentX[i] = Point<REAL_TYPE>(p() + boost::get<REAL_TYPE>(units[i]), p.left, p.right);},
                                    [&] (Point<DISCRETE_TYPE>& p) { currentX[i] = Point<DISCRETE_TYPE>(p() + boost::get<DISCRETE_TYPE>(units[i]), p.left, p.right);});
-            else {
+            } else {
+                // Don't need to assert since if the above passes then this
+                // will also pass.
                 for (auto j = 0u; j < units.size(); j++) {
                     match(currentX[j], [&] (Point<REAL_TYPE>& p) { currentX[j] = Point<REAL_TYPE>(p() - boost::get<REAL_TYPE>(units[j]), p.left, p.right);},
                                        [&] (Point<DISCRETE_TYPE>& p) { currentX[j] = Point<DISCRETE_TYPE>(p() - boost::get<DISCRETE_TYPE>(units[j]), p.left, p.right);});
