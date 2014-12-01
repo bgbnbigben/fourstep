@@ -63,14 +63,14 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
          * discrete code works for this but it's a giant flaming pile of shit
          * that needs to be cleaned up.
          */
-        std::vector<coord_type> units;
+        std::vector<coord_type> units(bestX.size());
         for (auto i = 0u; i < bestX.size(); i++) {
             match(bestX[i], [&] (Point<REAL_TYPE>& p) {
                     auto dist = std::min(meshWidth, std::min(p.right - p(), p() - p.left));
                     // YOLO always move right.
                     units[i] = dist;
-                }, [&] (Point<DISCRETE_TYPE>& p) {
-                    auto dist = 1;
+                }, [&] (const Point<DISCRETE_TYPE>& p) {
+                    DISCRETE_TYPE dist = 1;
                     if (p() == p.right)
                         dist = -1;
                     units[i] = dist;
