@@ -82,7 +82,8 @@ double eval(std::string s) {
     Status status = shunting_yard(s.c_str(), &result);
     if (status != OK) {
         show_error(status);
-        return status;
+        // TODO work out how to do this without killing the entire program
+        std::exit(1);
     } else {
         return result;
     }
