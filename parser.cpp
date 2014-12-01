@@ -123,7 +123,11 @@ REAL_TYPE gamsFunc(const points_vector& x) {
             size_t finder;
             size_t f2;
             if ((finder = replaced.find("==")) != std::string::npos) {
-                ret += 10*std::abs(eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2)));
+                if (ret < std::numeric_limits<double>::max() - 10*std::abs(eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2)))) {
+                    ret += 10*std::abs(eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2)));
+                } else {
+                    assert(0);
+                }
             } else if ((finder = replaced.find("<")) != std::string::npos && (f2 = replaced.find("<", finder+1)) != std::string::npos) {
                 bool eq = false;
                 if (replaced[finder+1] == '=') {
@@ -131,56 +135,100 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     eq = true;
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+2, f2));
-                    if (left > right)
-                        ret += 10*(left - right);
+                    if (left > right) {
+                        if (ret < std::numeric_limits<double>::max() - 10*(left - right)) {
+                            ret += 10*(left - right);
+                        } else {
+                            assert(0);
+                        }
+                    }
                 } else {
                     /* < */
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+1, f2));
-                    if (left >= right)
-                        ret += 10*(left - right) + 10;
+                    if (left >= right) {
+                        if (ret < std::numeric_limits<double>::max() - 10*(left - right) + 10) {
+                            ret += 10*(left - right) + 10;
+                        } else {
+                            assert(0);
+                        }
+                    }
                 }
 
                 if (replaced[f2+1] == '=') {
                     /* <= */
                     auto left = eval(replaced.substr(finder + 1 + eq, f2));
                     auto right = eval(replaced.substr(f2+2));
-                    if (left > right)
-                        ret += 10*(left - right);
+                    if (left > right) {
+                        if (ret < std::numeric_limits<double>::max() - 10*(left - right)) {
+                            ret += 10*(left - right);
+                        } else {
+                            assert(0);
+                        }
+                    }
                 } else {
                     /* < */
                     auto left = eval(replaced.substr(finder + 1 + eq, f2));
                     auto right = eval(replaced.substr(f2+1));
-                    if (left >= right)
-                        ret += 10*(left - right) + 10;
+                    if (left >= right) {
+                        if (ret < std::numeric_limits<double>::max() - 10*(left - right) + 10) {
+                            ret += 10*(left - right) + 10;
+                        } else {
+                            assert(0);
+                        }
+                    }
                 }
             } else if ((finder = replaced.find("<")) != std::string::npos) {
                 if (replaced.find("=") != std::string::npos) {
                     auto left = eval(replaced.substr(0, finder));
-                    auto right = eval(replaced.substr(finder+2));
-                    if (left > right)
-                        ret += 10*(left - right);
+                    auto right = eval(replaced.substr(finder+2)); 
+                    if (left > right) {
+                        if (ret < std::numeric_limits<double>::max() - 10*(left - right)) {
+                            ret += 10*(left - right);
+                        } else {
+                            assert(0);
+                        }
+                    }
                 } else {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+1));
-                    if (left >= right)
-                        ret += 10*(left - right) + 10;
+                    if (left >= right) {
+                        if (ret < std::numeric_limits<double>::max() - 10*(left - right) + 10) {
+                            ret += 10*(left - right) + 10;
+                        } else {
+                            assert(0);
+                        }
+                    }
                 }
             } else if ((finder = replaced.find(">")) != std::string::npos) {
                 if (replaced.find("=") != std::string::npos) {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+2));
-                    if (left < right)
-                        ret += 10*(right - left);
+                    if (left < right) {
+                        if (ret < std::numeric_limits<double>::max() - 10*(right - left)) {
+                            ret += 10*(right - left);
+                        } else {
+                            assert(0);
+                        }
+                    }
                 } else {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+1));
-                    if (left <= right)
-                        ret += 10*(right - left) + 10;
+                    if (left <= right) {
+                        if (ret < std::numeric_limits<double>::max() - 10*(right - left) + 10) {
+                            ret += 10*(right - left) + 10;
+                        } else {
+                            assert(0);
+                        }
+                    }
                 }
             }
         } else {
-            ret += eval(replaced);
+            if (ret < std::numeric_limits<double>::max() - eval(replaced)) {
+                ret += eval(replaced);
+            } else {
+                assert(0);
+            }
         }
     }
     return ret;
