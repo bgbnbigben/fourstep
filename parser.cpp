@@ -320,12 +320,12 @@ points_vector parseGams(char* f) {
                     auto found = varMap.find(token);
                     if (found != varMap.end()) { 
                         match(found->second, [&](Point<DISCRETE_TYPE> p) {
-                            found->second = Point<DISCRETE_TYPE>(p(), 0, p.right);
+                            found->second = Point<DISCRETE_TYPE>(p.right/2, 0, p.right);
                         }, [&](Point<REAL_TYPE> p) {
-                            found->second = Point<REAL_TYPE>(p(), 0., p.right);
+                            found->second = Point<REAL_TYPE>(p.right/2., 0., p.right);
                         });
                     } else {
-                        varMap.insert(std::make_pair(token, Point<REAL_TYPE>(0, 0, 100000)));
+                        varMap.insert(std::make_pair(token, Point<REAL_TYPE>(50000, 0, 100000)));
                         varOrder.push_back(token);
                     }
                 } else {
