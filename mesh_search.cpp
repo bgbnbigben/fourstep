@@ -86,22 +86,30 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
                     units[i] = dist;
                 });
         }
+        auto clamp = [](auto a, auto l, auto r) {
+            return std::max(std::min(a, r), l);
+        };
+
         // +1 for the negative sum.
         for (auto i = 0u; i < units.size() + 1; i++) {
             // make ALL THE COPIES
             auto currentX = bestX;
             if (i < units.size()) {
                 assert(units[i].which() == currentX[i].which());
-                match(currentX[i], [&] (Point<REAL_TYPE>& p) { currentX[i] = Point<REAL_TYPE>(p() + boost::get<REAL_TYPE>(units[i]), p.left, p.right);},
-                                   [&] (Point<DISCRETE_TYPE>& p) { currentX[i] = Point<DISCRETE_TYPE>(p() + boost::get<DISCRETE_TYPE>(units[i]), p.left, p.right);});
+                match(currentX[i], [&] (const Point<REAL_TYPE>& p) {
+                        currentX[i] = Point<REAL_TYPE>(clamp(p() + boost::get<REAL_TYPE>(units[i]), p.left, p.right), p.left, p.right);
+                    }, [&] (const Point<DISCRETE_TYPE>& p) {
+                        currentX[i] = Point<DISCRETE_TYPE>(clamp(p() + boost::get<DISCRETE_TYPE>(units[i]), p.left, p.right), p.left, p.right);
+                    });
             } else {
                 // Don't need to assert since if the above passes then this
                 // will also pass.
                 for (auto j = 0u; j < units.size(); j++) {
-                    match(currentX[j], [&] (Point<REAL_TYPE>& p) { currentX[j] = Point<REAL_TYPE>(p() - boost::get<REAL_TYPE>(units[j]), p.left, p.right);},
-                                       [&] (Point<DISCRETE_TYPE>& p) { currentX[j] = Point<DISCRETE_TYPE>(p() - boost::get<DISCRETE_TYPE>(units[j]), p.left, p.right);});
-                    match(currentX[j], [&] (Point<REAL_TYPE>& r) { r = Point<REAL_TYPE>(std::max(r.left, std::min(r.right, r())), r.left, r.right);},
-                                       [&] (Point<DISCRETE_TYPE>& r) { r = Point<DISCRETE_TYPE>(std::max(r.left, std::min(r.right, r())), r.left, r.right);});
+                    match(currentX[j], [&] (const Point<REAL_TYPE>& p) {
+                            currentX[j] = Point<REAL_TYPE>(clamp(p() - boost::get<REAL_TYPE>(units[j]), p.left, p.right), p.left, p.right);
+                        }, [&] (const Point<DISCRETE_TYPE>& p) {
+                            currentX[j] = Point<DISCRETE_TYPE>(clamp(p() - boost::get<DISCRETE_TYPE>(units[j]), p.left, p.right), p.left, p.right);
+                        });
                 }
             }
             auto currentF = f(currentX);
