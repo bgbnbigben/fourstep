@@ -65,8 +65,18 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
          */
         std::vector<coord_type> units(bestX.size());
         for (auto i = 0u; i < bestX.size(); i++) {
-            match(bestX[i], [&] (Point<REAL_TYPE>& p) {
-                    auto dist = std::min(meshWidth, std::min(p.right - p(), p() - p.left));
+            match(bestX[i], [&] (const Point<REAL_TYPE>& p) {
+                    REAL_TYPE dist;
+                    if (std::fabs(p.right - p() - meshWidth) < std::numeric_limits<REAL_TYPE>::epsilon()) {
+                        if (std::fabs(p() - p.left - meshWidth) > std::numeric_limits<REAL_TYPE>::epsilon())
+                            dist = -meshWidth;
+                        else if (std::fabs(p.right - p() - p() - p.left) > std::numeric_limits<REAL_TYPE>::epsilon()) 
+                            dist = (p.right - p());
+                        else
+                            dist = -(p() - p.left);
+                    } else {
+                        dist = meshWidth;
+                    }
                     // YOLO always move right.
                     units[i] = dist;
                 }, [&] (const Point<DISCRETE_TYPE>& p) {

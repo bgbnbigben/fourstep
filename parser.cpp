@@ -224,6 +224,7 @@ points_vector parseGams(char* f) {
             std::string data(line);
             while (!ends_with(";", data)) {
                 std::getline(file, line);
+                stripStart(line, " ");
                 data.append(line);
             }
             data.pop_back();
