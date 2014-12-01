@@ -29,9 +29,8 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
 
     bool improvement = true;
     long long constrictions = 0; // take 2^constrictions number of nodes per line.
-    auto meshWidth = 2.0;
-    while ((improvement && constrictions < 10) || constrictions < 10) {
-        improvement ? (std::cerr << "Had an improvement\n") : (std::cerr << "Going around again\n");
+    auto meshWidth = 256.0;
+    while ((improvement && constrictions < 15) || constrictions < 15) {
         std::cerr << "Constriction " << constrictions << std::endl;
         improvement = false;
         points_vector test(bestX);
@@ -114,6 +113,7 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
             }
             auto currentF = f(currentX);
             if (currentF < bestF) {
+                std::cout << "Found " << bestF << std::endl;
                 bestF = currentF;
                 bestX = currentX;
                 improvement = true;

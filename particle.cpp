@@ -36,7 +36,6 @@ void Particle::updateVelocity(double w, double r1, double r2, const points_vecto
 
 std::tuple<points_vector, REAL_TYPE> particle_swarm(std::function<REAL_TYPE(const points_vector&)> f, const std::vector<points_vector>& x) {
     std::vector<Particle> particles(x.size());
-    std::cout << "particles done" << std::endl;
     for (auto i = 0u; i < x.size(); i++) {
         particles[i] = Particle(x[i]);
     }
@@ -58,7 +57,9 @@ std::tuple<points_vector, REAL_TYPE> particle_swarm(std::function<REAL_TYPE(cons
         } else {
             w = w_min;
         }
-        for (auto& particle: particles) {
+        # pragma omp parallel for
+        for (auto i = 0u; i < particles.size(); i++) {
+            auto& particle = particles[i];
             auto newVal = f(particle.current);
             if (newVal < particle.value) {
                 particle.best = particle.current;

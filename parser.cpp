@@ -126,7 +126,7 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                 if (ret < std::numeric_limits<double>::max() - 10*std::abs(eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2)))) {
                     ret += 10*std::abs(eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2)));
                 } else {
-                    assert(0);
+                    std::numeric_limits<double>::infinity();
                 }
             } else if ((finder = replaced.find("<")) != std::string::npos && (f2 = replaced.find("<", finder+1)) != std::string::npos) {
                 bool eq = false;
@@ -139,7 +139,7 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                         if (ret < std::numeric_limits<double>::max() - 10*(left - right)) {
                             ret += 10*(left - right);
                         } else {
-                            assert(0);
+                            std::numeric_limits<double>::infinity();
                         }
                     }
                 } else {
@@ -150,7 +150,7 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                         if (ret < std::numeric_limits<double>::max() - 10*(left - right) + 10) {
                             ret += 10*(left - right) + 10;
                         } else {
-                            assert(0);
+                            std::numeric_limits<double>::infinity();
                         }
                     }
                 }
@@ -163,7 +163,7 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                         if (ret < std::numeric_limits<double>::max() - 10*(left - right)) {
                             ret += 10*(left - right);
                         } else {
-                            assert(0);
+                            std::numeric_limits<double>::infinity();
                         }
                     }
                 } else {
@@ -174,7 +174,7 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                         if (ret < std::numeric_limits<double>::max() - 10*(left - right) + 10) {
                             ret += 10*(left - right) + 10;
                         } else {
-                            assert(0);
+                            std::numeric_limits<double>::infinity();
                         }
                     }
                 }
@@ -186,7 +186,7 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                         if (ret < std::numeric_limits<double>::max() - 10*(left - right)) {
                             ret += 10*(left - right);
                         } else {
-                            assert(0);
+                            std::numeric_limits<double>::infinity();
                         }
                     }
                 } else {
@@ -196,7 +196,7 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                         if (ret < std::numeric_limits<double>::max() - 10*(left - right) + 10) {
                             ret += 10*(left - right) + 10;
                         } else {
-                            assert(0);
+                            std::numeric_limits<double>::infinity();
                         }
                     }
                 }
@@ -208,7 +208,7 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                         if (ret < std::numeric_limits<double>::max() - 10*(right - left)) {
                             ret += 10*(right - left);
                         } else {
-                            assert(0);
+                            std::numeric_limits<double>::infinity();
                         }
                     }
                 } else {
@@ -218,7 +218,7 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                         if (ret < std::numeric_limits<double>::max() - 10*(right - left) + 10) {
                             ret += 10*(right - left) + 10;
                         } else {
-                            assert(0);
+                            std::numeric_limits<double>::infinity();
                         }
                     }
                 }
@@ -227,7 +227,7 @@ REAL_TYPE gamsFunc(const points_vector& x) {
             if (ret < std::numeric_limits<double>::max() - eval(replaced)) {
                 ret += eval(replaced);
             } else {
-                assert(0);
+                std::numeric_limits<double>::infinity();
             }
         }
     }
@@ -401,8 +401,7 @@ points_vector parseGams(char* f) {
                 }
             }
         } else {
-            std::cerr << "Token not implemented!" << std::endl;
-            std::cerr << line << std::endl;
+            // Unimplemented token; ignore.
         }
     }
     /*for (auto it = varMap.begin(); it != varMap.end(); it++) {
