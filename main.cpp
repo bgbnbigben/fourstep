@@ -7,6 +7,7 @@
 #include "mesh_search.h"
 #include <mpi.h>
 #include "parser.h"
+#include <csignal>
 
 
 //class varPoint;
@@ -14,6 +15,7 @@
 //#include "varPoint.h"
 //#include "varRegion.h"
 #include "particle.h"
+
 
 SpatialIndex::ISpatialIndex* tree;
 SpatialIndex::id_type id;
@@ -41,6 +43,12 @@ public:
 
 unsigned long long function_calls;
 unsigned long long total_function_calls;
+int rank;
+volatile sig_atomic_t done = 0;
+
+void term (int signum) {
+    done = 1;
+}
 
 double cube_width = 0.05;
 
@@ -201,6 +209,12 @@ try{
 
 int main(int argc, char* argv[]) {
     MPI::Init(argc, argv);
+
+    struct sigaction action;
+    memset(&action, 0, sizeof(struct sigaction));
+    action.sa_handler = term;
+    sigaction(SIGTERM, &action, NULL);
+
     std::vector<points_vector> start_points(1);
     start_points[0] = parseGams(argv[1]);
 
@@ -265,7 +279,7 @@ int main(int argc, char* argv[]) {
 
     MPI::Status stat;
     auto numprocs = MPI::COMM_WORLD.Get_size();
-    auto rank = MPI::COMM_WORLD.Get_rank();
+    rank = MPI::COMM_WORLD.Get_rank();
     MPI::COMM_WORLD.Set_errhandler(MPI::ERRORS_ARE_FATAL);
     auto numDimensions = start_points[0].size();
     std::cout << "There are " << numDimensions << " dimensions" << std::endl;
@@ -275,32 +289,46 @@ int main(int argc, char* argv[]) {
         points_vector globalData;
         auto partitions = 64;
         auto generatePartitions = [&](auto numPartitions) {
-            std::vector<int> splits(numDimensions, -1);
-            auto maxPartitions = std::lround(std::pow(numDimensions, 1./partitions));
-            auto numPartitionsLeft = partitions;
-            auto continuous = 0u;
-            for (auto i = 0u; i < numDimensions; i++) {
-                match(start_points[0][i], [&](Point<REAL_TYPE>) {
-                        continuous++;
-                    }, [&](Point<DISCRETE_TYPE> p) {
-                        splits[i] = std::min((DISCRETE_TYPE)maxPartitions, p.right - p.left + 1);
-                        numPartitionsLeft = std::lround(numPartitionsLeft / (double)splits[i]);
+            auto actualPartitions = numPartitions;
+            std::vector<int> splits(numDimensions, 1);
+            std::vector<int> splitIndex; splitIndex.reserve(numDimensions);
+            std::cout << "cont are ";
+            for (auto i = 0u; i < start_points[0].size(); i++) {
+                match(start_points[0][i], [](Point<DISCRETE_TYPE>) {
+                    }, [&](Point<REAL_TYPE>) {
+                        std::cout << i << " ";
+                        splitIndex.push_back(i);
                     });
             }
-            for (auto& split: splits) {
-                if (split == -1)
-                    split = std::lround(std::pow(numPartitionsLeft, 1./continuous));
+            std::cout << std::endl;
+            std::random_device rd;
+            std::mt19937 g(rd());
+            std::shuffle(splitIndex.begin(), splitIndex.end(), g);
+            auto found = false;
+            for (auto i = 10; i > 1 && !found; i--) {
+                // attempt to get i ^ x * (i-1) ^ (splitIndex.size() - x) == numPartitions. 
+                // Solve for the largest possible i. Solved if x > 0
+                for (auto j = std::log(numPartitions) / std::log(i); j > 0; j--) {
+                    if (std::pow(i, j) * std::pow(i - 1, splitIndex.size() - j) <= numPartitions) {
+                        actualPartitions = std::pow(i, j) * std::pow(i - 1, splitIndex.size() - j);
+                        for (auto k = 0; k < splitIndex.size(); k++) {
+                            if (k <= j)
+                                splits[splitIndex[k]] = j;
+                            else
+                                splits[splitIndex[k]] = j-1;
+                        }
+                        found = true;
+                        std::cout << "Solving i^x * (i-1) ^ (nd - x) == np with " << i << "^" << j << "*" << i-1 << "^" << splitIndex.size() - j << std::endl;
+                        break;
+                    }
+                }
             }
-
-            auto actualPartitions = 1u;
-            for (auto split: splits)
-                actualPartitions *= split;
-
             std::cout << "Getting " << actualPartitions << " when we wanted " << numPartitions << std::endl;
             std::vector<points_vector> ret(actualPartitions);
             ret[0] = start_points[0];
-            for (auto i = 1u; i < actualPartitions; i++) {
-                ret[i] = ret[i-1];
+            for (auto i = 0u; i < actualPartitions; i++) {
+                if (i > 0)
+                    ret[i] = ret[i-1];
                 auto tick = false;
                 auto j = 0;
                 do {
@@ -334,9 +362,9 @@ int main(int argc, char* argv[]) {
 
         std::vector<points_vector> partition_vector = generatePartitions(partitions);
         auto proc_i = 1;
-        for (auto partition : partition_vector) {
+        for (auto& partition : partition_vector) {
             std::cout << "Sending to process " << proc_i << std::endl;
-            MPI::COMM_WORLD.Send(&partition.front(), numDimensions * sizeof(partition[0]), MPI::CHAR, proc_i, DATA_TAG);
+            MPI::COMM_WORLD.Isend(&partition.front(), numDimensions * sizeof(partition[0]), MPI::CHAR, proc_i, DATA_TAG);
             proc_i = (proc_i + 1) % numprocs; if (proc_i == 0) ++proc_i;
         }
         for (auto i = 1; i < numprocs; i++) {
@@ -382,7 +410,7 @@ int main(int argc, char* argv[]) {
             std::cerr << e.what() << std::endl;
             throw e;
         }
-        auto numSwarmParticles = 10u;
+        auto numSwarmParticles = 30u;
 
         while (1) {
             REAL_TYPE f;

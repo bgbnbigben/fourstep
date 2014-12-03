@@ -82,6 +82,7 @@ double eval(std::string s) {
     Status status = shunting_yard(s.c_str(), &result);
     if (status != OK) {
         show_error(status);
+        std::cerr << s << std::endl;
         // TODO work out how to do this without killing the entire program
         std::exit(1);
     } else {
@@ -110,11 +111,16 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     j++;
                 }
                 std::string var = objFunc[i].substr(start, j - start);
+                auto good = true;
                 match(x[std::find(varOrder.begin(), varOrder.end(), var) - varOrder.begin()], [&](Point<REAL_TYPE> p) {
+                    good = std::isfinite(p());
                     replaced += std::to_string(p());
                 }, [&](Point<DISCRETE_TYPE> p) {
+                    good = std::isfinite(p());
                     replaced += std::to_string(p());
                 });
+                if (!good)
+                    return std::numeric_limits<REAL_TYPE>::infinity();
                 j--;
             }
         }
@@ -123,10 +129,12 @@ REAL_TYPE gamsFunc(const points_vector& x) {
             size_t finder;
             size_t f2;
             if ((finder = replaced.find("==")) != std::string::npos) {
-                if (ret < std::numeric_limits<double>::max() - 10*std::abs(eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2)))) {
-                    ret += 10*std::abs(eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2)));
+                // Penalise the living crap out of ==, since we want to *hurt*
+                // binary failures.
+                if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2)), 5.)) {
+                    ret += std::pow(1 + eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2)), 5.);
                 } else {
-                    return std::numeric_limits<double>::infinity();
+                    return std::numeric_limits<REAL_TYPE>::infinity();
                 }
             } else if ((finder = replaced.find("<")) != std::string::npos && (f2 = replaced.find("<", finder+1)) != std::string::npos) {
                 bool eq = false;
@@ -136,10 +144,10 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+2, f2));
                     if (left > right) {
-                        if (ret < std::numeric_limits<double>::max() - 10*(left - right)) {
-                            ret += 10*(left - right);
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 5.)) {
+                            ret += std::pow(1 + left - right, 5.);
                         } else {
-                            return std::numeric_limits<double>::infinity();
+                            return std::numeric_limits<REAL_TYPE>::infinity();
                         }
                     }
                 } else {
@@ -147,10 +155,10 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+1, f2));
                     if (left >= right) {
-                        if (ret < std::numeric_limits<double>::max() - 10*(left - right) + 10) {
-                            ret += 10*(left - right) + 10;
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 5.) + 10.000000) {
+                            ret += std::pow(1 + left - right, 5.) + 10.000000;
                         } else {
-                            return std::numeric_limits<double>::infinity();
+                            return std::numeric_limits<REAL_TYPE>::infinity();
                         }
                     }
                 }
@@ -160,10 +168,10 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(finder + 1 + eq, f2));
                     auto right = eval(replaced.substr(f2+2));
                     if (left > right) {
-                        if (ret < std::numeric_limits<double>::max() - 10*(left - right)) {
-                            ret += 10*(left - right);
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 5.)) {
+                            ret += std::pow(1 + left - right, 5.);
                         } else {
-                            return std::numeric_limits<double>::infinity();
+                            return std::numeric_limits<REAL_TYPE>::infinity();
                         }
                     }
                 } else {
@@ -171,10 +179,10 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(finder + 1 + eq, f2));
                     auto right = eval(replaced.substr(f2+1));
                     if (left >= right) {
-                        if (ret < std::numeric_limits<double>::max() - 10*(left - right) + 10) {
-                            ret += 10*(left - right) + 10;
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 5.) + 10.000000) {
+                            ret += std::pow(1 + left - right, 5.) + 10.000000;
                         } else {
-                            return std::numeric_limits<double>::infinity();
+                            return std::numeric_limits<REAL_TYPE>::infinity();
                         }
                     }
                 }
@@ -183,20 +191,20 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+2)); 
                     if (left > right) {
-                        if (ret < std::numeric_limits<double>::max() - 10*(left - right)) {
-                            ret += 10*(left - right);
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 5.)) {
+                            ret += std::pow(1 + left - right, 5.);
                         } else {
-                            return std::numeric_limits<double>::infinity();
+                            return std::numeric_limits<REAL_TYPE>::infinity();
                         }
                     }
                 } else {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+1));
                     if (left >= right) {
-                        if (ret < std::numeric_limits<double>::max() - 10*(left - right) + 10) {
-                            ret += 10*(left - right) + 10;
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 5.) + 10.000000) {
+                            ret += std::pow(1 + left - right, 5.) + 10.000000;
                         } else {
-                            return std::numeric_limits<double>::infinity();
+                            return std::numeric_limits<REAL_TYPE>::infinity();
                         }
                     }
                 }
@@ -205,29 +213,29 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+2));
                     if (left < right) {
-                        if (ret < std::numeric_limits<double>::max() - 10*(right - left)) {
-                            ret += 10*(right - left);
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + right - left, 5.)) {
+                            ret += std::pow(1 + right - left, 5.);
                         } else {
-                            return std::numeric_limits<double>::infinity();
+                            return std::numeric_limits<REAL_TYPE>::infinity();
                         }
                     }
                 } else {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+1));
                     if (left <= right) {
-                        if (ret < std::numeric_limits<double>::max() - 10*(right - left) + 10) {
-                            ret += 10*(right - left) + 10;
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + right - left, 5.) + 10.000000) {
+                            ret += std::pow(1 + right - left, 5.) + 10.000000;
                         } else {
-                            return std::numeric_limits<double>::infinity();
+                            return std::numeric_limits<REAL_TYPE>::infinity();
                         }
                     }
                 }
             }
         } else {
-            if (ret < std::numeric_limits<double>::max() - eval(replaced)) {
+            if (ret < std::numeric_limits<REAL_TYPE>::max() - eval(replaced)) {
                 ret += eval(replaced);
             } else {
-                return std::numeric_limits<double>::infinity();
+                return std::numeric_limits<REAL_TYPE>::infinity();
             }
         }
     }
@@ -298,6 +306,7 @@ points_vector parseGams(char* f) {
                         if (found != varMap.end()) { 
                             assert(strcmp(found->second.type().name(), typeid(Point<DISCRETE_TYPE>(0, 0, 0)).name()) == 0);
                             auto old = boost::get<Point<DISCRETE_TYPE>>(found->second);
+                            std::cout << " / done" << std::endl;
                             found->second = Point<DISCRETE_TYPE>(old(), 0, 1);
                         } else {
                             varMap.insert(std::make_pair(token, Point<DISCRETE_TYPE>(0, 0, 1)));
@@ -310,6 +319,7 @@ points_vector parseGams(char* f) {
                             // this line is 400% bullshit.
                             assert(strcmp(found->second.type().name(), typeid(Point<DISCRETE_TYPE>(0, 0, 0)).name()) == 0);
                             auto old = boost::get<Point<DISCRETE_TYPE>>(found->second);
+                            std::cout << " / done" << std::endl;
                             found->second = Point<DISCRETE_TYPE>(old(), old.left, old.right);
                         } else {
                             varMap.insert(std::make_pair(token, Point<DISCRETE_TYPE>(0, -100000, 100000)));
@@ -320,12 +330,12 @@ points_vector parseGams(char* f) {
                     auto found = varMap.find(token);
                     if (found != varMap.end()) { 
                         match(found->second, [&](Point<DISCRETE_TYPE> p) {
-                            found->second = Point<DISCRETE_TYPE>(p.right/2, 0, p.right);
+                            found->second = Point<DISCRETE_TYPE>(0, 0, p.right);
                         }, [&](Point<REAL_TYPE> p) {
-                            found->second = Point<REAL_TYPE>(p.right/2., 0., p.right);
+                            found->second = Point<REAL_TYPE>(0, 0., p.right);
                         });
                     } else {
-                        varMap.insert(std::make_pair(token, Point<REAL_TYPE>(50000, 0, 100000)));
+                        varMap.insert(std::make_pair(token, Point<REAL_TYPE>(0, 0, 100000)));
                         varOrder.push_back(token);
                     }
                 } else {
@@ -344,9 +354,11 @@ points_vector parseGams(char* f) {
                     tokens[1].erase(tokens[1].end()-1); // remove trailing whitespaces 
                 auto f = varMap.find(tokens[0]);
                 match(f->second, [&](Point<REAL_TYPE> p) {
-                    f->second = Point<REAL_TYPE>(std::max(p(), std::stod(tokens[1])), std::stod(tokens[1]), p.right);
+                    //f->second = Point<REAL_TYPE>(std::max(p(), std::stod(tokens[1])), std::stod(tokens[1]), p.right);
+                    f->second = Point<REAL_TYPE>(std::stod(tokens[1]), std::stod(tokens[1]), p.right);
                 }, [&](Point<DISCRETE_TYPE> p) {
-                    f->second = Point<DISCRETE_TYPE>((p(), std::stoll(tokens[1])), std::stoll(tokens[1]), p.right);
+                    //f->second = Point<DISCRETE_TYPE>(std::max(p(), std::stoll(tokens[1])), std::stoll(tokens[1]), p.right);
+                    f->second = Point<DISCRETE_TYPE>(std::stoll(tokens[1]), std::stoll(tokens[1]), p.right);
                 });
             }
         } else if (starts_with("UPPER_BOUND", line)) {

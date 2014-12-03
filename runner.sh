@@ -18,9 +18,9 @@ for file in $filename; do
 # Set output file name.
 #PBS -o $file.txt
 cd \$PBS_O_WORKDIR
-echo \$PBS_O_WORKDIR
 ulimit -c unlimited
 ulimit -s unlimited
+ulimit -f unlimited
 module load gcc/4.9.1
 module load openmpi-gcc/1.8.3
 module load boost/1.54.0-gcc
@@ -30,5 +30,5 @@ export PBSCOREDUMP=1
 export LD_LIBRARY_PATH=/home/bgbnbigben/project/clp/build/lib/:$LD_LIBRARY_PATH 
 mpiexec /home/bgbnbigben/project/${file}/main $file
 EOS
-    cd /home/bgbnbigben/project/
+cd /home/bgbnbigben/project/
 done;

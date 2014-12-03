@@ -9,9 +9,9 @@ class Point {
         const T right;
 
         Point() = delete;
-        Point(const T v, const T l, const T r) : val(v), left(l), right(r) {};
-        Point(const Point& p) : val(p.val), left(p.left), right(p.right) {};
-        Point(const Point&& p) : val(p.val), left(p.left), right(p.right) {};
+        Point(const T v, const T l, const T r) : val(v), left(l), right(r) {assert(left <= val && val <= right && "Point is out of bounds");};
+        Point(const Point& p) : val(p.val), left(p.left), right(p.right) {assert(left <= val && val <= right && "Point is out of bounds");};
+        Point(const Point&& p) : val(p.val), left(p.left), right(p.right) {assert(left <= val && val <= right && "Point is out of bounds");};
 
         Point<T>& operator=(const Point<T>& p) {
             // Urgh.

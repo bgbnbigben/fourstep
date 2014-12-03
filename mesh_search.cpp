@@ -1,4 +1,5 @@
 #include "mesh_search.h"
+#include <csignal>
 
 namespace {
     template <typename T, typename U = T>
@@ -6,6 +7,8 @@ namespace {
         return a < b ? a : b;
     }
 }
+
+extern sig_atomic_t done;
 
 std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const points_vector&)> f, const points_vector& x) {
     std::vector<bool> continuous(x.size());
@@ -28,9 +31,9 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
     points_vector bestX(x);
 
     bool improvement = true;
-    long long constrictions = 0; // take 2^constrictions number of nodes per line.
-    auto meshWidth = 256.0;
-    while ((improvement && constrictions < 15) || constrictions < 15) {
+    long long constrictions = 0; // take 2*constrictions number of nodes per line. Or something.
+    auto meshWidth = 1024.0;
+    while (!done && ((improvement && constrictions < 20) || constrictions < 20)) {
         std::cerr << "Constriction " << constrictions << std::endl;
         improvement = false;
         points_vector test(bestX);
@@ -111,6 +114,12 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
                         });
                 }
             }
+            if (i < currentX.size())
+                match(currentX[i], [&](Point<REAL_TYPE> p) {
+                        assert(p() >= p.left && p() <= p.right && "P is out of bounds.....");
+                    }, [&](Point<DISCRETE_TYPE> p) {
+                        assert(p() >= p.left && p() <= p.right && "P is out of bounds.....");
+                    });
             auto currentF = f(currentX);
             if (currentF < bestF) {
                 std::cout << "Found " << bestF << std::endl;
@@ -123,7 +132,10 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
         }
         if (improvement == false)
             constrictions++;
+        else
+            constrictions = 0;
     }
+    if (done) std::cerr << "RAN OUT OF TIME" << std::endl;
 
     std::cerr << bestF << std::endl;
     return std::make_tuple(bestX, bestF);
