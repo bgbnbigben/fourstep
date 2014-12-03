@@ -133,7 +133,8 @@ std::tuple<points_vector, REAL_TYPE> mesh_search(std::function<REAL_TYPE(const p
         if (improvement == false)
             constrictions++;
         else
-            constrictions = 0;
+            //constrictions = 0;
+            constrictions--;
     }
     if (done) std::cerr << "RAN OUT OF TIME" << std::endl;
 

@@ -131,8 +131,9 @@ REAL_TYPE gamsFunc(const points_vector& x) {
             if ((finder = replaced.find("==")) != std::string::npos) {
                 // Penalise the living crap out of ==, since we want to *hurt*
                 // binary failures.
-                if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2)), 5.)) {
-                    ret += std::pow(1 + eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2)), 5.);
+                if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2)), 80.)) {
+                    //std::cout << "Failed constraint " << i << " so adding " << std::pow(1 + eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2)), 80.) << std::endl;
+                    ret += std::pow(1 + std::abs(eval(replaced.substr(0, finder)) - eval(replaced.substr(finder+2))), 80.);
                 } else {
                     return std::numeric_limits<REAL_TYPE>::infinity();
                 }
@@ -144,8 +145,9 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+2, f2));
                     if (left > right) {
-                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 5.)) {
-                            ret += std::pow(1 + left - right, 5.);
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 80.)) {
+                            //std::cout << "Failed constraint " << i << " so adding " << std::pow(1 + left - right, 80.) << std::endl;
+                            ret += std::pow(1 + left - right, 80.);
                         } else {
                             return std::numeric_limits<REAL_TYPE>::infinity();
                         }
@@ -155,8 +157,9 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+1, f2));
                     if (left >= right) {
-                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 5.) + 10.000000) {
-                            ret += std::pow(1 + left - right, 5.) + 10.000000;
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 80.) + 10.000000) {
+                            //std::cout << "Failed constraint " << i << " so adding " << std::pow(1 + left - right, 80.) + 10.000000 << std::endl;
+                            ret += std::pow(1 + left - right, 80.) + 10.000000;
                         } else {
                             return std::numeric_limits<REAL_TYPE>::infinity();
                         }
@@ -168,8 +171,9 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(finder + 1 + eq, f2));
                     auto right = eval(replaced.substr(f2+2));
                     if (left > right) {
-                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 5.)) {
-                            ret += std::pow(1 + left - right, 5.);
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 80.)) {
+                            //std::cout << "Failed constraint " << i << " so adding " << std::pow(1 + left - right, 80.) << std::endl;
+                            ret += std::pow(1 + left - right, 80.);
                         } else {
                             return std::numeric_limits<REAL_TYPE>::infinity();
                         }
@@ -179,8 +183,9 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(finder + 1 + eq, f2));
                     auto right = eval(replaced.substr(f2+1));
                     if (left >= right) {
-                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 5.) + 10.000000) {
-                            ret += std::pow(1 + left - right, 5.) + 10.000000;
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 80.) + 10.000000) {
+                            //std::cout << "Failed constraint " << i << " so adding " << std::pow(1 + left - right, 80.) + 10.000000 << std::endl;
+                            ret += std::pow(1 + left - right, 80.) + 10.000000;
                         } else {
                             return std::numeric_limits<REAL_TYPE>::infinity();
                         }
@@ -191,8 +196,9 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+2)); 
                     if (left > right) {
-                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 5.)) {
-                            ret += std::pow(1 + left - right, 5.);
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 80.)) {
+                            //std::cout << "Failed constraint " << i << " so adding " << std::pow(1 + left - right, 80.) << std::endl;
+                            ret += std::pow(1 + left - right, 80.);
                         } else {
                             return std::numeric_limits<REAL_TYPE>::infinity();
                         }
@@ -201,8 +207,9 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+1));
                     if (left >= right) {
-                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 5.) + 10.000000) {
-                            ret += std::pow(1 + left - right, 5.) + 10.000000;
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + left - right, 80.) + 10.000000) {
+                            //std::cout << "Failed constraint " << i << " so adding " << std::pow(1 + left - right, 80.) + 10.000000 << std::endl;
+                            ret += std::pow(1 + left - right, 80.) + 10.000000;
                         } else {
                             return std::numeric_limits<REAL_TYPE>::infinity();
                         }
@@ -213,8 +220,9 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+2));
                     if (left < right) {
-                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + right - left, 5.)) {
-                            ret += std::pow(1 + right - left, 5.);
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + right - left, 80.)) {
+                            //std::cout << "Failed constraint " << i << " so adding " << std::pow(1 + right - left, 80.) << std::endl;
+                            ret += std::pow(1 + right - left, 80.);
                         } else {
                             return std::numeric_limits<REAL_TYPE>::infinity();
                         }
@@ -223,8 +231,9 @@ REAL_TYPE gamsFunc(const points_vector& x) {
                     auto left = eval(replaced.substr(0, finder));
                     auto right = eval(replaced.substr(finder+1));
                     if (left <= right) {
-                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + right - left, 5.) + 10.000000) {
-                            ret += std::pow(1 + right - left, 5.) + 10.000000;
+                        if (ret < std::numeric_limits<REAL_TYPE>::max() - std::pow(1 + right - left, 80.) + 10.000000) {
+                            //std::cout << "Failed constraint " << i << " so adding " << std::pow(1 + right - left, 80.) + 10.000000 << std::endl;
+                            ret += std::pow(1 + right - left, 80.) + 10.000000;
                         } else {
                             return std::numeric_limits<REAL_TYPE>::infinity();
                         }
@@ -233,6 +242,7 @@ REAL_TYPE gamsFunc(const points_vector& x) {
             }
         } else {
             if (ret < std::numeric_limits<REAL_TYPE>::max() - eval(replaced)) {
+                //std::cout << "Failed constraint " << i << " so adding " << eval(replaced) << std::endl;
                 ret += eval(replaced);
             } else {
                 return std::numeric_limits<REAL_TYPE>::infinity();
@@ -255,7 +265,7 @@ bool ends_with(std::string suffix, std::string& s) {
 
 std::vector<std::string> split(const std::string &text, char sep) {
     std::vector<std::string> tokens;
-    int start = 0, end = 0;
+    auto start = 0ul, end = 0ul;
     while ((end = text.find(sep, start)) != std::string::npos) {
         tokens.push_back(text.substr(start, end - start));
         start = end + 1;
@@ -316,7 +326,7 @@ points_vector parseGams(char* f) {
                         auto found = varMap.find(token);
                         if (found != varMap.end()) { 
                             // jfc
-                            // this line is 400% bullshit.
+                            // this line is 80.% bullshit.
                             assert(strcmp(found->second.type().name(), typeid(Point<DISCRETE_TYPE>(0, 0, 0)).name()) == 0);
                             auto old = boost::get<Point<DISCRETE_TYPE>>(found->second);
                             std::cout << " / done" << std::endl;
